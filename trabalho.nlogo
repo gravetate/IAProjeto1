@@ -1,20 +1,17 @@
-breed [cleaners cleaner]
-turtles-own [ tipo detritos probabilidade-depositos ]
+turtles-own [ tipo detritos probabilidade-depositos memoria ]
 patches-own [ sujo? deposito? ]
-
-; Variáveis globais
-globals [ cleaner postos-deposito energia-inicial tempo-carregamento capacidade-detritos
-           polluter-tipos recarregamento?]
-
+globals [ cleaner energia-inicial tempo-carregamento
+           polluter-tipos recarregamento? ]
 
 to setup
   clear-all
 
   ; Variáveis ajustáveis pelo utilizador
-  set energia-inicial energia ; Energia inicial do Cleaner
-  set tempo-carregamento 10  ; Tempo de carregamento
-  set capacidade-detritos 5  ; Capacidade de armazenar detritos
-  set postos-deposito 3  ; Número de postos de depósito
+  set energia-inicial energia  ; Energia inicial do Cleaner, ajustada via slider
+  set tempo-carregamento 2     ; Tempo de carregamento ajustável
+  set capacidade-detritos capacidade-detritos  ; Capacidade máxima de detritos ajustável via slider
+  set postos-deposito postos-deposito  ; Número de postos de depósito ajustável
+  set recarregamento? false     ; Inicialmente, não está recarregando
 
   ; Limpar o ambiente
   ask patches [
@@ -23,7 +20,7 @@ to setup
     set pcolor white
   ]
 
-  ; Criar contentores em posições aleatórias
+  ; Criar contentores de depósito
   create-contentores postos-deposito
 
   ; Criar Cleaner no canto inferior esquerdo
@@ -31,45 +28,47 @@ to setup
     set tipo "cleaner"
     set energia energia-inicial
     set detritos 0
-    setxy min-pxcor min-pycor
+    setxy min-pxcor min-pycor  ;; Posição inicial
     set color blue
-    set cleaner self
+    set cleaner self  ;; Definir como Cleaner global
+    set memoria []
   ]
 
-  ; Criar Polluters com probabilidades ajustáveis pelo utilizador
+  ; Criar Polluters
+  create-polluters
+
+  reset-ticks
+end
+
+to create-contentores [ n ]
+  repeat n [
+    let patch-alvo one-of patches with [not deposito?]
+    ask patch-alvo [
+      set deposito? true
+      set pcolor black  ; Contentores são pretos
+    ]
+  ]
+end
+to create-polluters
   create-turtles 1 [
     set tipo "polluter"
     set color red
     setxy random-xcor random-ycor
-    set probabilidade-depositos prob-polluter-1  ; Usa o slider 1
+    set probabilidade-depositos prob-polluter-1  ; Slider ajustável
   ]
   create-turtles 1 [
     set tipo "polluter"
     set color green
     setxy random-xcor random-ycor
-    set probabilidade-depositos prob-polluter-2  ; Usa o slider 2
+    set probabilidade-depositos prob-polluter-2  ; Slider ajustável
   ]
   create-turtles 1 [
     set tipo "polluter"
     set color orange
     setxy random-xcor random-ycor
-    set probabilidade-depositos prob-polluter-3  ; Usa o slider 3
-  ]
-
-  reset-ticks
-end
-
-
-to create-contentores [ n ]
-  repeat n [
-    let patch-alvo one-of patches
-    ask patch-alvo [
-      set deposito? true
-      set pcolor black
-    ]
+    set probabilidade-depositos prob-polluter-3  ; Slider ajustável
   ]
 end
-
 
 to go_once
   go
@@ -80,42 +79,78 @@ to go_n
   repeat vezes [ go ]
 end
 
+
+
+
 to go
   ask cleaner [ mover-e-limpar ]
   ask turtles with [ tipo = "polluter" ] [ mover-e-poluente ]
-
   tick
 end
 
 ; Comportamento do Cleaner: mover-se, limpar e descarregar
 to mover-e-limpar
+  if not recarregamento? [
+    ; Verifica se o Cleaner já está carregando o número máximo de detritos
+    if detritos >= capacidade-detritos [ descarregar ]
 
-  if recarregamento = false[
-  if detritos >= capacidade-detritos [ descarregar ]
+    ; O Cleaner só guarda o patch onde está atualmente na memória
+    let patch-atual patch-here
 
-  let patch-alvo one-of patches in-radius 1
-  face patch-alvo
-  move-to patch-alvo
+    ; Verificar se o patch já está na memória do Cleaner
+    let patch-na-memoria filter [ m -> first m = patch-atual ] memoria
 
-  ; Limpar resíduos
-  if sujo? [
-    set sujo? false
-    set pcolor white
-    set detritos detritos + 1
-  ]
+    ifelse not empty? patch-na-memoria [
+      ; Atualiza o estado do patch na memória se já estiver lá
+      let posicao (position first patch-na-memoria memoria)
+      set memoria replace-item posicao memoria (list patch-atual [sujo?] of patch-atual)
+    ] [
+      ; Adiciona um novo patch à memória do Cleaner
+      set memoria lput (list patch-atual [sujo?] of patch-atual) memoria
+    ]
 
-  ; Perder energia
-  set energia energia - 1
-  if energia = 0 [ recarregar ]
+    ; Seleciona o patch mais sujo dentro de uma visão muito limitada (por exemplo, raio 1 para teste)
+    let patches-vistos sort patches in-radius 1  ; Teste com um raio um pouco maior para garantir que ele "veja"
+
+    ; Filtrar patches sujos manualmente
+    let patches-sujos filter [p -> [sujo?] of p] patches-vistos
+
+    ifelse length patches-sujos > 0 [
+      let patch-alvo item random (length patches-sujos) patches-sujos
+      show "Movendo para patch sujo!"  ; Diagnóstico
+      face patch-alvo  ; Orienta o Cleaner na direção do patch sujo
+      fd 1             ; Aumentar o valor do movimento para garantir que ele se mova (valor maior para teste)
+    ] [
+      ; Se não há patches sujos, mover-se aleatoriamente dentro da visão limitada
+      if length patches-vistos > 0 [
+        let patch-aleatorio item random (length patches-vistos) patches-vistos
+        show "Movendo para patch aleatório!"  ; Diagnóstico
+        face patch-aleatorio
+        fd 1           ; Aumentar o valor do movimento para garantir que ele se mova
+      ]
+    ]
+
+    ; Limpar resíduos se estiver no patch sujo
+    if [sujo?] of patch-here [
+      set sujo? false
+      set pcolor white
+      set detritos detritos + 1
+    ]
+
+    ; Perder energia
+    set energia energia - 1
+    if energia = 0 [ recarregar ]
   ]
 end
 
+
 ; Função de recarregar energia
 to recarregar
-
-    move-to patch min-pxcor min-pycor
-    set energia energia-inicial
-
+  move-to patch min-pxcor min-pycor
+  set recarregamento? true
+  set energia energia-inicial
+  wait tempo-carregamento
+  set recarregamento? false
 end
 
 ; Função de descarregar detritos
@@ -132,9 +167,11 @@ end
 to mover-e-poluente
   let patch-alvo one-of patches in-radius 1
   move-to patch-alvo
-  if not sujo? and (random-float 1 < probabilidade-depositos) [
-    set sujo? true
-    set pcolor yellow
+  if not [sujo?] of patch-here and random-float 1 < probabilidade-depositos [
+    ask patch-here [
+      set sujo? true
+      set pcolor yellow
+    ]
   ]
 end
 @#$#@#$#@
@@ -240,7 +277,7 @@ prob-polluter-1
 prob-polluter-1
 0
 1
-1.0
+0.4
 0.05
 1
 NIL
@@ -255,7 +292,7 @@ prob-polluter-2
 prob-polluter-2
 0
 1
-0.0
+0.4
 0.05
 1
 NIL
@@ -285,6 +322,36 @@ energia
 energia
 0
 100
+24.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+330
+508
+502
+541
+capacidade-detritos
+capacidade-detritos
+1
+10
+5.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+941
+165
+1113
+198
+postos-deposito
+postos-deposito
+2
+10
 3.0
 1
 1
