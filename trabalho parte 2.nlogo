@@ -1,17 +1,17 @@
 turtles-own [ tipo detritos probabilidade-depositos memoria patches-recentes ]
-patches-own [ sujo? deposito? tempo-limpo ]
-globals [ cleaner  tempo-carregamento
-           polluter-tipos recarregamento? energia  ]
+patches-own [ sujo? deposito? tempo-limpo painel-solar? tempo-de-vida]
+globals [ cleaner polluter-tipos recarregamento? energia tempo-desde-carregamento quantidade-de-sujeira solar-timer]
 
 to setup
   clear-all
 
   ; Variáveis ajustáveis pelo utilizador
   set  energia energia-inicial   ; Energia inicial do Cleaner, ajustada via slider
-  set tempo-carregamento 2     ; Tempo de carregamento ajustável
   set capacidade-detritos capacidade-detritos ; Capacidade máxima de detritos ajustável via slider
   set postos-deposito postos-deposito  ; Número de postos de depósito ajustável
   set recarregamento? false     ; Inicialmente, não está recarregando
+  set tempo-desde-carregamento 0
+  set solar-timer 0
 
   ; Limpar o ambiente
   ask patches [
@@ -19,6 +19,7 @@ to setup
     set deposito? false
     set pcolor white
     set tempo-limpo 0
+    set painel-solar? false
 
   ]
 
@@ -31,7 +32,6 @@ to setup
     set energia energia-inicial
     set detritos 0
     setxy min-pxcor min-pycor  ;; Posição inicial
-    set color blue
     set cleaner self
     set size 2
     set shape "cleaner"
@@ -44,6 +44,7 @@ to setup
   create-polluters
 
   reset-ticks
+  clear-all-plots
 end
 
 to create-contentores [ n ]
@@ -52,30 +53,51 @@ to create-contentores [ n ]
     ask patch-alvo [
       set deposito? true
       set pcolor black  ; Contentores são pretos
+
+    ]
+  ]
+end
+to create-random-solar-panel
+  if random 100 < 5 [  ; 5% de chance de spawnar um painel solar a cada tick
+    let patch-alvo one-of patches with [not painel-solar?]
+    ask patch-alvo [
+      set painel-solar? true
+      set pcolor blue  ; Painéis solares são azuis
+      set tempo-de-vida random 35 + 1  ; Define um tempo de vida aleatório entre 1 e 35 ticks
+    ]
+  ]
+end
+to verificar-paineis-solares
+  ask patches with [painel-solar?] [
+    set tempo-de-vida tempo-de-vida - 1  ; Diminui o tempo de vida a cada tick
+    if tempo-de-vida <= 0 [
+      set painel-solar? false  ; Remove o painel solar
+      set pcolor white         ; Volta a cor do patch ao normal
     ]
   ]
 end
 to create-polluters
 create-turtles 1 [
   set tipo "polluter"
-  set color red
-  set size 1.5  ; Um pouco menor que o Cleaner
+  set size 1.8
+  set shape "truck trash"
   setxy random-xcor random-ycor
   set probabilidade-depositos prob-polluter-1
 ]
 
 create-turtles 1 [
   set tipo "polluter"
-  set color green
-  set size 1.2  ; Um tamanho ligeiramente diferente
+
+  set size 1.8
+  set shape "truck trash"
   setxy random-xcor random-ycor
   set probabilidade-depositos prob-polluter-2
 ]
 
 create-turtles 1 [
   set tipo "polluter"
-  set color orange
-  set size 1.3  ; Tamanho variado
+  set size 1.8
+  set shape "truck trash"
   setxy random-xcor random-ycor
   set probabilidade-depositos prob-polluter-3
 ]
@@ -102,21 +124,43 @@ to go
     ]
   ]
   ask turtles with [ tipo = "polluter" ] [ mover-e-poluente ]
+  create-random-solar-panel
+
+  verificar-paineis-solares
+
+  set quantidade-de-sujeira count patches with [ sujo? ]
+  set-current-plot "Evolução da Sujeira"
+  set-current-plot-pen "Sujeira"
+  plot quantidade-de-sujeira
   tick
 end
 
 ; Comportamento do Cleaner: mover-se, limpar e descarregar
 to mover-e-limpar
-  ; If the Cleaner is not in the recharging state, it proceeds to clean and explore
   if not recarregamento? [
 
-    ; Check if the debris capacity is full, and if so, unload
+    ; Verifica se há painéis solares no alcance
+    let painel-alvo one-of patches in-radius 3 with [painel-solar?]  ; Verifica painéis solares num raio de 3 unidades (ajustável)
+
+    ; Se houver um painel solar no alcance, vai para ele
+    if painel-alvo != nobody [
+      face painel-alvo
+      fd 0.8
+
+      ; Verifica se chegou ao painel solar
+      if [painel-solar?] of patch-here [
+        recarregar-instantaneamente
+      ]
+      stop  ; Termina o movimento atual para recarregar primeiro
+    ]
+
+    ; Continua com o comportamento normal de limpeza e descarregamento
     if detritos >= capacidade-detritos [ descarregar ]
 
     let patch-atual patch-here
     let tempo-desde-limpeza ticks - [tempo-limpo] of patch-atual
 
-    ; Update memory with the status of the current patch
+    ; Atualiza memória do patch atual
     let patch-na-memoria filter [ m -> first m = patch-atual ] memoria
     ifelse not empty? patch-na-memoria [
       let posicao (position first patch-na-memoria memoria)
@@ -125,42 +169,25 @@ to mover-e-limpar
       set memoria lput (list patch-atual [sujo?] of patch-atual tempo-desde-limpeza) memoria
     ]
 
-    ; Add the current patch to the list of recently visited patches
+    ; Adiciona o patch atual à lista de patches recentes
     set patches-recentes lput patch-atual patches-recentes
-    ; Remove old patches from the list to avoid infinite growth
     if length patches-recentes > 20 [ set patches-recentes but-first patches-recentes ]
 
+    ; Movimenta para limpar patches sujos
     let patches-vistos sort patches in-radius 3
     let patches-sujos filter [p -> [sujo?] of p and not member? p patches-recentes] patches-vistos
-
     ifelse length patches-sujos > 0 [
-      let patch-alvo max-one-of (patch-set patches-sujos) [ticks - [tempo-limpo] of self]  ; Convert to agentset and prioritize the dirtiest patches
+      let patch-alvo max-one-of (patch-set patches-sujos) [ticks - [tempo-limpo] of self]
       face patch-alvo
       fd 0.8
     ] [
-      ; If no dirty patches are found, explore less recently visited patches or unexplored areas
-      let patches-desconhecidos filter [p -> [tempo-limpo] of p < 10 and not member? p patches-recentes] patches-vistos
-      ifelse length patches-desconhecidos > 0 [
-        let patch-alvo item random (length patches-desconhecidos) patches-desconhecidos
-        face patch-alvo
-        fd 0.8
-      ][
-        ; If no unknown patches, perform random exploration of known patches
-        let patch-aleatorio item random (length patches-vistos) patches-vistos
-        face patch-aleatorio
-        fd 0.8
-      ]
-]
-
-
-    ; Clean the current patch if it is dirty
-    if [sujo?] of patch-here [
-      set sujo? false
-      set pcolor white
-      set detritos detritos + 1
-      set tempo-limpo ticks
+      ; Se não encontrar patches sujos, explora aleatoriamente
+      let patch-aleatorio one-of patches-vistos
+      face patch-aleatorio
+      fd 0.8
     ]
 
+    ; Gasta energia por cada movimento
     set energia energia - 1
     if energia = 0 [ recarregar ]
   ]
@@ -173,11 +200,11 @@ to recarregar
 
 end
 to continuar-recarregar
-  if energia < energia-inicial [
-    set energia energia + 1
-    if energia = energia-inicial [
-      set recarregamento? false
-    ]
+  ; Se o Cleaner ainda não completou o ciclo de recarregamento
+  set tempo-desde-carregamento tempo-desde-carregamento + 1
+  if tempo-desde-carregamento >= tempo-carregamento [
+    set energia energia-inicial  ; Define a energia para o valor máximo após o tempo de recarregamento
+    set recarregamento? false    ; Finaliza o recarregamento
   ]
 end
 
@@ -222,15 +249,19 @@ to mover-e-poluente
     ]
   ]
 end
+to recarregar-instantaneamente
+  set energia energia-inicial  ; Recarrega totalmente a energia
+  set recarregamento? false
+end
 @#$#@#$#@
 GRAPHICS-WINDOW
-210
+201
 10
-647
-448
+773
+583
 -1
 -1
-13.0
+17.1
 1
 10
 1
@@ -362,10 +393,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-680
-81
-852
-114
+801
+71
+973
+104
 postos-deposito
 postos-deposito
 2
@@ -377,10 +408,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-681
-127
-853
-160
+802
+117
+974
+150
 capacidade-detritos
 capacidade-detritos
 1
@@ -392,10 +423,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-680
-28
-852
-61
+801
+18
+973
+51
 energia-inicial
 energia-inicial
 0
@@ -407,23 +438,67 @@ NIL
 HORIZONTAL
 
 MONITOR
-742
-283
-863
-328
-Numero de detritos
+821
+245
+984
+290
+Numero de detritos cleaner
 [detritos] of cleaner
 17
 1
 11
 
 MONITOR
-744
-394
-801
-439
+821
+309
+878
+354
 Energia
 [energia] of cleaner
+17
+1
+11
+
+SLIDER
+801
+168
+973
+201
+tempo-carregamento
+tempo-carregamento
+1
+50
+8.0
+1
+1
+NIL
+HORIZONTAL
+
+PLOT
+837
+472
+1037
+622
+Evolução da Sujeira
+ticks
+Sujeira 
+0.0
+10.0
+0.0
+10.0
+true
+false
+"" ""
+PENS
+"Sujeira" 1.0 0 -7500403 true "" ""
+
+MONITOR
+822
+374
+957
+419
+NIL
+quantidade-de-sujeira
 17
 1
 11
@@ -535,12 +610,17 @@ Circle -16777216 true false 30 30 240
 cleaner
 true
 14
-Circle -10899396 true false 2 2 297
-Rectangle -10899396 true false 90 75 135 90
-Rectangle -16777216 true true 90 60 120 90
-Rectangle -16777216 true true 180 60 210 90
-Polygon -13345367 true false 135 135 165 135 150 105 135 135
-Polygon -2674135 true false 120 165 135 180 165 180 180 165
+Circle -14835848 true false 30 30 242
+Circle -7500403 true false 116 116 67
+Circle -955883 true false 135 135 30
+Rectangle -2674135 true false 135 240 165 285
+Line -2674135 false 240 225 270 255
+Line -2674135 false 30 255 60 225
+Line -2674135 false 45 210 15 225
+Line -2674135 false 255 210 285 240
+Line -2674135 false 150 30 120 0
+Line -2674135 false 165 30 195 0
+Circle -13345367 true false 135 240 30
 
 cow
 false
@@ -729,20 +809,22 @@ false
 Polygon -7500403 true true 150 30 15 255 285 255
 Polygon -16777216 true false 151 99 225 223 75 224
 
-truck
+truck trash
 false
 0
-Rectangle -7500403 true true 4 45 195 187
-Polygon -7500403 true true 296 193 296 150 259 134 244 104 208 104 207 194
+Polygon -13345367 true false 296 193 296 150 259 134 244 104 208 104 207 194
 Rectangle -1 true false 195 60 195 105
 Polygon -16777216 true false 238 112 252 141 219 141 218 112
 Circle -16777216 true false 234 174 42
-Rectangle -7500403 true true 181 185 214 194
+Rectangle -13345367 true false 181 185 214 194
 Circle -16777216 true false 144 174 42
 Circle -16777216 true false 24 174 42
 Circle -7500403 false true 24 174 42
 Circle -7500403 false true 144 174 42
 Circle -7500403 false true 234 174 42
+Rectangle -10899396 true false 60 90 195 195
+Rectangle -10899396 true false 15 150 60 195
+Rectangle -10899396 true false 15 90 60 105
 
 turtle
 true

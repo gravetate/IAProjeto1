@@ -1,17 +1,16 @@
-turtles-own [ tipo detritos probabilidade-depositos memoria ]
+turtles-own [ tipo detritos probabilidade-depositos memoria patches-recentes ]
 patches-own [ sujo? deposito? tempo-limpo ]
-globals [ cleaner  tempo-carregamento
-           polluter-tipos recarregamento? energia  ]
+globals [ cleaner polluter-tipos recarregamento? energia tempo-desde-carregamento quantidade-de-sujeira ]
 
 to setup
   clear-all
 
   ; Variáveis ajustáveis pelo utilizador
   set  energia energia-inicial   ; Energia inicial do Cleaner, ajustada via slider
-  set tempo-carregamento 2     ; Tempo de carregamento ajustável
   set capacidade-detritos capacidade-detritos ; Capacidade máxima de detritos ajustável via slider
   set postos-deposito postos-deposito  ; Número de postos de depósito ajustável
   set recarregamento? false     ; Inicialmente, não está recarregando
+  set tempo-desde-carregamento 0
 
   ; Limpar o ambiente
   ask patches [
@@ -31,15 +30,19 @@ to setup
     set energia energia-inicial
     set detritos 0
     setxy min-pxcor min-pycor  ;; Posição inicial
-    set color blue
-    set cleaner self  ;; Definir como Cleaner global
+    set cleaner self
+    set size 2
+    set shape "cleaner"
     set memoria []
+    set patches-recentes []
+
   ]
 
   ; Criar Polluters
   create-polluters
 
   reset-ticks
+  clear-all-plots
 end
 
 to create-contentores [ n ]
@@ -52,24 +55,30 @@ to create-contentores [ n ]
   ]
 end
 to create-polluters
-  create-turtles 1 [
-    set tipo "polluter"
-    set color red
-    setxy random-xcor random-ycor
-    set probabilidade-depositos prob-polluter-1  ; Slider ajustável
-  ]
-  create-turtles 1 [
-    set tipo "polluter"
-    set color green
-    setxy random-xcor random-ycor
-    set probabilidade-depositos prob-polluter-2  ; Slider ajustável
-  ]
-  create-turtles 1 [
-    set tipo "polluter"
-    set color orange
-    setxy random-xcor random-ycor
-    set probabilidade-depositos prob-polluter-3  ; Slider ajustável
-  ]
+create-turtles 1 [
+  set tipo "polluter"
+  set size 1.8
+  set shape "truck trash"
+  setxy random-xcor random-ycor
+  set probabilidade-depositos prob-polluter-1
+]
+
+create-turtles 1 [
+  set tipo "polluter"
+
+  set size 1.8
+  set shape "truck trash"
+  setxy random-xcor random-ycor
+  set probabilidade-depositos prob-polluter-2
+]
+
+create-turtles 1 [
+  set tipo "polluter"
+  set size 1.8
+  set shape "truck trash"
+  setxy random-xcor random-ycor
+  set probabilidade-depositos prob-polluter-3
+]
 end
 
 to go_once
@@ -93,67 +102,73 @@ to go
     ]
   ]
   ask turtles with [ tipo = "polluter" ] [ mover-e-poluente ]
+  set quantidade-de-sujeira count patches with [ sujo? ]
+  set-current-plot "Evolução da Sujeira"
+  set-current-plot-pen "Sujeira"
+  plot quantidade-de-sujeira
   tick
 end
 
 ; Comportamento do Cleaner: mover-se, limpar e descarregar
 to mover-e-limpar
+  ; If the Cleaner is not in the recharging state, it proceeds to clean and explore
   if not recarregamento? [
+
+    ; Check if the debris capacity is full, and if so, unload
     if detritos >= capacidade-detritos [ descarregar ]
+
     let patch-atual patch-here
     let tempo-desde-limpeza ticks - [tempo-limpo] of patch-atual
 
-    ; Verifica se o patch já está na memória
+    ; Update memory with the status of the current patch
     let patch-na-memoria filter [ m -> first m = patch-atual ] memoria
-
-    ; Atualiza a memória com o status atual do patch
     ifelse not empty? patch-na-memoria [
-      ; Patch já está na memória, atualizar o status
       let posicao (position first patch-na-memoria memoria)
       set memoria replace-item posicao memoria (list patch-atual [sujo?] of patch-atual tempo-desde-limpeza)
     ] [
-      ; Patch não está na memória, adicionar novo
       set memoria lput (list patch-atual [sujo?] of patch-atual tempo-desde-limpeza) memoria
     ]
 
-    ; Escolha um patch para se mover baseado na memória e tempo desde última limpeza
-    let patches-vistos sort patches in-radius 1
-    let patches-sujos filter [p -> [sujo?] of p] patches-vistos
+    ; Add the current patch to the list of recently visited patches
+    set patches-recentes lput patch-atual patches-recentes
+    ; Remove old patches from the list to avoid infinite growth
+    if length patches-recentes > 20 [ set patches-recentes but-first patches-recentes ]
+
+    let patches-vistos sort patches in-radius 3
+    let patches-sujos filter [p -> [sujo?] of p and not member? p patches-recentes] patches-vistos
 
     ifelse length patches-sujos > 0 [
-      ; Prioriza patches que estão sujos por mais tempo
-      let patch-alvo max-one-of patches-sujos [ticks - [tempo-limpo] of self]
+      let patch-alvo max-one-of (patch-set patches-sujos) [ticks - [tempo-limpo] of self]  ; Convert to agentset and prioritize the dirtiest patches
       face patch-alvo
-      fd 1
+      fd 0.8
     ] [
-      ; Se nenhum patch está sujo, priorize patches não visitados recentemente
-      let patches-desconhecidos filter [p -> [tempo-limpo] of p < 5] patches-vistos
+      ; If no dirty patches are found, explore less recently visited patches or unexplored areas
+      let patches-desconhecidos filter [p -> [tempo-limpo] of p < 10 and not member? p patches-recentes] patches-vistos
       ifelse length patches-desconhecidos > 0 [
         let patch-alvo item random (length patches-desconhecidos) patches-desconhecidos
         face patch-alvo
-        fd 1
+        fd 0.8
       ][
+        ; If no unknown patches, perform random exploration of known patches
         let patch-aleatorio item random (length patches-vistos) patches-vistos
         face patch-aleatorio
-        fd 1
+        fd 0.8
       ]
-    ]
+]
 
-    ; Limpa o patch atual se estiver sujo
+
+    ; Clean the current patch if it is dirty
     if [sujo?] of patch-here [
       set sujo? false
       set pcolor white
       set detritos detritos + 1
-      set tempo-limpo ticks  ; Atualiza o tempo de limpeza do patch
+      set tempo-limpo ticks
     ]
 
-    ; Perder energia
     set energia energia - 1
     if energia = 0 [ recarregar ]
   ]
 end
-
-
 
 ; Função de recarregar energia
 to recarregar
@@ -162,11 +177,11 @@ to recarregar
 
 end
 to continuar-recarregar
-  if energia < energia-inicial [
-    set energia energia + 1
-    if energia = energia-inicial [
-      set recarregamento? false
-    ]
+  ; Se o Cleaner ainda não completou o ciclo de recarregamento
+  set tempo-desde-carregamento tempo-desde-carregamento + 1
+  if tempo-desde-carregamento >= tempo-carregamento [
+    set energia energia-inicial  ; Define a energia para o valor máximo após o tempo de recarregamento
+    set recarregamento? false    ; Finaliza o recarregamento
   ]
 end
 
@@ -180,10 +195,30 @@ to descarregar
   ]
 end
 
-; Comportamento dos Polluters: mover-se e poluir baseado em probabilidade
 to mover-e-poluente
-  let patch-alvo one-of patches in-radius 1
-  move-to patch-alvo
+  let patches-vistos patches in-radius 3
+
+  ; Convert the agentset to a list using 'sort'
+  let patches-vistos-list sort patches-vistos
+
+  ; Use 'filter' to get a list of clean patches
+  let patches-limpos filter [not sujo?] patches-vistos-list
+
+  ; Convert the list of clean patches back into an agentset
+  let patches-limpos-agentset patch-set patches-limpos
+
+  ; If there are cleaner patches nearby, move toward the cleanest one
+  ifelse any? patches-limpos-agentset [
+    let patch-alvo max-one-of patches-limpos-agentset [ticks - [tempo-limpo] of self]
+    face patch-alvo
+    fd 0.8
+  ] [
+    ; If no clean patches are nearby, move randomly
+    right random 360
+    fd 1
+  ]
+
+  ; Dirty the current patch based on probability
   if not [sujo?] of patch-here and random-float 1 < probabilidade-depositos [
     ask patch-here [
       set sujo? true
@@ -279,7 +314,7 @@ vezes
 vezes
 1
 50
-21.0
+25.0
 1
 1
 NIL
@@ -324,7 +359,7 @@ prob-polluter-3
 prob-polluter-3
 0
 1
-0.0
+0.3
 0.05
 1
 NIL
@@ -376,23 +411,67 @@ NIL
 HORIZONTAL
 
 MONITOR
-742
-283
+700
+255
 863
-328
-Numero de detritos
+300
+Numero de detritos cleaner
 [detritos] of cleaner
 17
 1
 11
 
 MONITOR
-744
-394
-801
-439
+700
+319
+757
+364
 Energia
 [energia] of cleaner
+17
+1
+11
+
+SLIDER
+680
+178
+852
+211
+tempo-carregamento
+tempo-carregamento
+1
+50
+8.0
+1
+1
+NIL
+HORIZONTAL
+
+PLOT
+716
+482
+916
+632
+Evolução da Sujeira
+ticks
+Sujeira 
+0.0
+10.0
+0.0
+10.0
+true
+false
+"" ""
+PENS
+"Sujeira" 1.0 0 -7500403 true "" ""
+
+MONITOR
+701
+384
+836
+429
+NIL
+quantidade-de-sujeira
 17
 1
 11
@@ -500,6 +579,21 @@ false
 0
 Circle -7500403 true true 0 0 300
 Circle -16777216 true false 30 30 240
+
+cleaner
+true
+14
+Circle -14835848 true false 30 30 242
+Circle -7500403 true false 116 116 67
+Circle -955883 true false 135 135 30
+Rectangle -2674135 true false 135 240 165 285
+Line -2674135 false 240 225 270 255
+Line -2674135 false 30 255 60 225
+Line -2674135 false 45 210 15 225
+Line -2674135 false 255 210 285 240
+Line -2674135 false 150 30 120 0
+Line -2674135 false 165 30 195 0
+Circle -13345367 true false 135 240 30
 
 cow
 false
@@ -688,20 +782,22 @@ false
 Polygon -7500403 true true 150 30 15 255 285 255
 Polygon -16777216 true false 151 99 225 223 75 224
 
-truck
+truck trash
 false
 0
-Rectangle -7500403 true true 4 45 195 187
-Polygon -7500403 true true 296 193 296 150 259 134 244 104 208 104 207 194
+Polygon -13345367 true false 296 193 296 150 259 134 244 104 208 104 207 194
 Rectangle -1 true false 195 60 195 105
 Polygon -16777216 true false 238 112 252 141 219 141 218 112
 Circle -16777216 true false 234 174 42
-Rectangle -7500403 true true 181 185 214 194
+Rectangle -13345367 true false 181 185 214 194
 Circle -16777216 true false 144 174 42
 Circle -16777216 true false 24 174 42
 Circle -7500403 false true 24 174 42
 Circle -7500403 false true 144 174 42
 Circle -7500403 false true 234 174 42
+Rectangle -10899396 true false 60 90 195 195
+Rectangle -10899396 true false 15 150 60 195
+Rectangle -10899396 true false 15 90 60 105
 
 turtle
 true
