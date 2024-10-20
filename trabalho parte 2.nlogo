@@ -1,6 +1,7 @@
-turtles-own [ tipo detritos probabilidade-depositos memoria patches-recentes ]
-patches-own [ sujo? deposito? tempo-limpo painel-solar? tempo-de-vida]
-globals [ cleaner polluter-tipos recarregamento? energia tempo-desde-carregamento quantidade-de-sujeira solar-timer]
+turtles-own [ tipo detritos memoria patches-recentes tipo-de-poluicao probabilidade-depositos]
+patches-own [ sujo? deposito? tempo-limpo painel-solar? tempo-de-vida eficiencia  tipo-de-sujeira ]
+
+globals [ cleaner polluter-tipos recarregamento? energia tempo-desde-carregamento quantidade-de-sujeira solar-timer ]
 
 to setup
   clear-all
@@ -54,16 +55,20 @@ to create-contentores [ n ]
       set deposito? true
       set pcolor black  ; Contentores são pretos
 
+
     ]
   ]
 end
 to create-random-solar-panel
-  if random 100 < 5 [  ; 5% de chance de spawnar um painel solar a cada tick
-    let patch-alvo one-of patches with [not painel-solar?]
-    ask patch-alvo [
-      set painel-solar? true
-      set pcolor blue  ; Painéis solares são azuis
-      set tempo-de-vida random 35 + 1  ; Define um tempo de vida aleatório entre 1 e 35 ticks
+  if count patches with [painel-solar?] < 5 [  ; max-paineis-solares definido como slider ou variável
+    if random 100 < 5 [
+      let patch-alvo one-of patches with [not painel-solar?]
+      ask patch-alvo [
+        set painel-solar? true
+        set pcolor blue
+        set tempo-de-vida random 35 + 1
+        set eficiencia random 3 + 1
+      ]
     ]
   ]
 end
@@ -76,32 +81,39 @@ to verificar-paineis-solares
     ]
   ]
 end
+
 to create-polluters
-create-turtles 1 [
-  set tipo "polluter"
-  set size 1.8
-  set shape "truck trash"
-  setxy random-xcor random-ycor
-  set probabilidade-depositos prob-polluter-1
-]
+  ; Criar o primeiro polluter com poluição leve
+  create-turtles 1 [
+    set tipo "polluter"
+    set size 1.8
+    set shape "truck trash"
+    setxy random-xcor random-ycor
+    set tipo-de-poluicao "leve"
+    set probabilidade-depositos prob-polluter-1
+  ]
 
-create-turtles 1 [
-  set tipo "polluter"
+  ; Criar o segundo polluter com poluição pesada
+  create-turtles 1 [
+    set tipo "polluter"
+    set size 1.8
+    set shape "truck trash"
+    setxy random-xcor random-ycor
+    set tipo-de-poluicao "pesada"
+    set probabilidade-depositos prob-polluter-2
+  ]
 
-  set size 1.8
-  set shape "truck trash"
-  setxy random-xcor random-ycor
-  set probabilidade-depositos prob-polluter-2
-]
-
-create-turtles 1 [
-  set tipo "polluter"
-  set size 1.8
-  set shape "truck trash"
-  setxy random-xcor random-ycor
-  set probabilidade-depositos prob-polluter-3
-]
+  ; Criar o terceiro polluter com poluição tóxica
+  create-turtles 1 [
+    set tipo "polluter"
+    set size 1.8
+    set shape "truck trash"
+    setxy random-xcor random-ycor
+    set tipo-de-poluicao "toxica"
+    set probabilidade-depositos prob-polluter-3
+  ]
 end
+
 
 to go_once
   go
@@ -114,18 +126,12 @@ end
 
 
 
-
 to go
   ask cleaner [
-    ifelse recarregamento? [
-      continuar-recarregar
-    ] [
-      mover-e-limpar
-    ]
+    schedule-actions
   ]
   ask turtles with [ tipo = "polluter" ] [ mover-e-poluente ]
   create-random-solar-panel
-
   verificar-paineis-solares
 
   set quantidade-de-sujeira count patches with [ sujo? ]
@@ -135,12 +141,187 @@ to go
   tick
 end
 
+to schedule-actions
+  if recarregamento? [
+    continuar-recarregar
+    stop
+  ]
+
+  ; Prioridade 1: Se a energia estiver baixa, tentar planejar caminho para um painel solar
+  if energia < energia-inicial * 0.2 and not recarregamento? [
+    print "Energia baixa. Tentando encontrar um painel solar enquanto continua limpando..."
+    let destino planejar-viagem "painel-solar"
+
+
+    ; Aqui, planejar-viagem é apenas um comando, não atribuímos a uma variável
+    ; Se a viagem não for possível, continuamos limpando
+    ifelse destino = nobody [
+      print "Nenhum painel solar encontrado. Continuando a limpar..."
+      mover-e-limpar
+
+    ][
+      let caminho planejar-caminho destino
+      ifelse not empty? caminho [
+        seguir-caminho caminho
+      ][
+         print "Painel solar encontrado mas longe. Continuando a limpar..."
+         mover-e-limpar
+      ]
+    ]
+
+
+    stop
+  ]
+
+  ; Prioridade 2: Se a capacidade de detritos estiver cheia, planejar caminho para um depósito
+  if detritos >= capacidade-detritos [
+    print "Capacidade de detritos atingida. Planejando caminho para o depósito..."
+    let destino planejar-viagem "deposito"
+    stop
+  ]
+
+  ; Prioridade 3: Continuar limpando patches usando a função mover-e-limpar
+  mover-e-limpar
+end
+
+to-report planejar-viagem [objetivo]
+  let destino nobody
+
+  ; Encontrar o destino com base no objetivo
+  if objetivo = "painel-solar" [
+    print "Procurando painel solar mais próximo..."
+    set destino min-one-of patches with [painel-solar?] [distance myself]
+  ]
+  if objetivo = "deposito" [
+    print "Procurando depósito mais próximo..."
+    set destino min-one-of patches with [deposito?] [distance myself]
+  ]
+
+  ; Verificar se há um destino válido
+  if destino = nobody [
+    print (word "Nenhum " objetivo " encontrado! Cancelando planejamento.")
+    report nobody  ; Retorna nobody se não encontrar destino
+  ]
+
+  ; Logando o destino encontrado
+  print (word "Destino encontrado: " destino ", distância: " distance destino)
+
+  report destino  ; Retorna o destino encontrado
+end
+
+
+
+to-report planejar-caminho [destino]
+  ; Calcular os caminhos possíveis até o destino e retornar o de menor custo
+  let caminhos []
+
+  ; Iterar sobre todos os patches entre o Cleaner e o destino, convertendo o agentset para uma lista
+  let caminho-atual []
+  let patches-no-caminho sort patch-set patches in-radius 5 with [distance myself <= distance destino]
+
+  ; Avaliar o custo de cada patch no caminho
+  foreach patches-no-caminho [ patch-atual ->
+    let patch-custo calcular-custo-de-patch patch-atual
+    set caminho-atual lput (list patch-atual patch-custo) caminho-atual
+  ]
+
+  ; Ordenar os caminhos pelo menor custo total
+  let melhor-caminho sort-by [ [c1 c2] -> (last c1) < (last c2) ] caminho-atual
+
+  ; Calcular o custo total de energia do melhor caminho
+  let custo-total 0
+  foreach melhor-caminho [ etapa ->
+    set custo-total custo-total + (last etapa)
+  ]
+
+  print (word "Custo estimado de energia para o caminho: " custo-total)
+
+  ; Verificar se o Cleaner tem energia suficiente para seguir o caminho
+  ifelse energia >= custo-total [
+    print "Energia suficiente para seguir o caminho."
+    report melhor-caminho  ; Retorna o melhor caminho se a energia for suficiente
+  ] [
+    print "Energia insuficiente para seguir o caminho."
+    report []  ; Retorna um caminho vazio se não houver energia suficiente
+  ]
+end
+
+
+
+
+
+
+to-report calcular-custo-de-patch [alvo-patch]
+  let custo 1  ; Custo padrão de movimento
+
+  ; Se o patch estiver sujo, aumentar o custo com base no tipo de sujeira
+  if [sujo?] of alvo-patch [
+    if [tipo-de-sujeira] of alvo-patch = "pesada" [
+      set custo custo + (energia-inicial * 0.25)
+      print (word "Patch " alvo-patch " tem sujeira pesada. Custo aumentado em 25% da energia.")
+    ]
+    if [tipo-de-sujeira] of alvo-patch = "toxica" [
+      set custo custo + (energia-inicial * 0.5)
+      print (word "Patch " alvo-patch " tem sujeira tóxica. Custo aumentado em 50% da energia.")
+    ]
+  ]
+
+  report custo
+end
+
+; Função para seguir o caminho com menor custo
+to seguir-caminho [caminho]
+  print "Seguindo o caminho planejado..."
+  foreach caminho [ etapa ->
+    let patch-alvo first etapa
+    print (word "Movendo para patch: " patch-alvo)
+    face patch-alvo
+    fd 1
+
+    ; Reduzir a energia a cada movimento
+    set energia energia - 1
+    print (word "Energia restante: " energia)
+
+    ; Verifica se o patch tem sujeira e aplica penalidades adicionais de energia
+    if [sujo?] of patch-alvo [
+      if [tipo-de-sujeira] of patch-alvo = "pesada" [
+        set energia energia - (energia-inicial * 0.25)
+        print (word "Passou por sujeira pesada. Energia reduzida em 25%. Energia atual: " energia)
+      ]
+      if [tipo-de-sujeira] of patch-alvo = "toxica" [
+        set energia energia - (energia-inicial * 0.5)
+        print (word "Passou por sujeira tóxica. Energia reduzida em 50%. Energia atual: " energia)
+      ]
+    ]
+
+    ; Verificar se a energia acabou
+    if energia <= 0 [
+      print "Energia esgotada! Necessário recarregar."
+      recarregar
+      stop
+    ]
+  ]
+  print "Chegou ao destino!"
+end
+
+
+to procurar-e-recarregar
+  let painel-alvo one-of patches in-radius 3 with [painel-solar?]
+  if painel-alvo != nobody [
+    face painel-alvo
+    fd 0.8
+    if [painel-solar?] of patch-here [
+      recarregar-instantaneamente
+    ]
+  ]
+end
+
 ; Comportamento do Cleaner: mover-se, limpar e descarregar
 to mover-e-limpar
   if not recarregamento? [
 
     ; Verifica se há painéis solares no alcance
-    let painel-alvo one-of patches in-radius 3 with [painel-solar?]  ; Verifica painéis solares num raio de 3 unidades (ajustável)
+    let painel-alvo one-of patches in-radius 3 with [painel-solar?]
 
     ; Se houver um painel solar no alcance, vai para ele
     if painel-alvo != nobody [
@@ -173,7 +354,34 @@ to mover-e-limpar
     set patches-recentes lput patch-atual patches-recentes
     if length patches-recentes > 20 [ set patches-recentes but-first patches-recentes ]
 
-    ; Movimenta para limpar patches sujos
+    ; Se o patch estiver sujo, limpar e aplicar dano baseado no tipo de poluição
+    if [sujo?] of patch-atual [
+      ; Acessa diretamente o valor de tipo-de-sujeira do patch
+      if [tipo-de-sujeira] of patch-atual = "pesada" [
+        ; Aplica dano de 25% de energia
+        set energia energia - (energia-inicial * 0.25)
+      ]
+      if [tipo-de-sujeira] of patch-atual = "toxica" [
+        ; Aplica dano de 50% de energia
+        set energia energia - (energia-inicial * 0.5)
+      ]
+
+      ; Limpar o patch
+      ask patch-atual [
+        set sujo? false
+        set pcolor white
+        set tempo-limpo ticks
+      ]
+
+      ; Atualiza a quantidade de detritos que o Cleaner carrega
+      set detritos detritos + 1
+    ]
+
+
+
+
+
+    ; Movimenta-se para novos patches sujos
     let patches-vistos sort patches in-radius 3
     let patches-sujos filter [p -> [sujo?] of p and not member? p patches-recentes] patches-vistos
     ifelse length patches-sujos > 0 [
@@ -189,9 +397,10 @@ to mover-e-limpar
 
     ; Gasta energia por cada movimento
     set energia energia - 1
-    if energia = 0 [ recarregar ]
+    if energia <= 0 [ recarregar ]
   ]
 end
+
 
 ; Função de recarregar energia
 to recarregar
@@ -217,51 +426,64 @@ to descarregar
     set detritos 0
   ]
 end
-
 to mover-e-poluente
-  let patches-vistos patches in-radius 3
+  ; Encontrar patches ao redor que não estão sujos e que não são depósitos
+  let patches-limpos patches in-radius 3 with [not sujo? and not deposito?]
 
-  ; Convert the agentset to a list using 'sort'
-  let patches-vistos-list sort patches-vistos
-
-  ; Use 'filter' to get a list of clean patches
-  let patches-limpos filter [not sujo?] patches-vistos-list
-
-  ; Convert the list of clean patches back into an agentset
-  let patches-limpos-agentset patch-set patches-limpos
-
-  ; If there are cleaner patches nearby, move toward the cleanest one
-  ifelse any? patches-limpos-agentset [
-    let patch-alvo max-one-of patches-limpos-agentset [ticks - [tempo-limpo] of self]
+  ifelse any? patches-limpos [
+    ; Se houver patches limpos (e sem depósitos), mover-se para um deles
+    let patch-alvo one-of patches-limpos
     face patch-alvo
     fd 0.8
   ] [
-    ; If no clean patches are nearby, move randomly
-    right random 360
-    fd 1
+    ; Se não houver patches limpos, mover-se aleatoriamente, mas evitar depósitos
+    let patches-validos patches in-radius 3 with [not deposito?]
+    ifelse any? patches-validos [
+      let patch-aleatorio one-of patches-validos
+      face patch-aleatorio
+      fd 0.8
+    ] [
+      right random 360
+      fd 0.8
+    ]
   ]
-
-  ; Dirty the current patch based on probability
-  if not [sujo?] of patch-here and random-float 1 < probabilidade-depositos [
-    ask patch-here [
-      set sujo? true
-      set pcolor yellow
+  ; Deposição de sujeira com probabilidade definida pelos sliders
+  if not [sujo?] of patch-here and not [deposito?] of patch-here [  ; Verifica se o patch não é depósito
+    let chance-deposit random-float 1
+    if chance-deposit < probabilidade-depositos [
+      ask patch-here [
+        set sujo? true
+        set tipo-de-sujeira [tipo-de-poluicao] of myself
+        if tipo-de-sujeira = "leve" [
+          set pcolor yellow  ; Poluição leve
+        ]
+        if tipo-de-sujeira = "pesada" [
+          set pcolor brown   ; Poluição pesada
+        ]
+        if tipo-de-sujeira = "toxica" [
+          set pcolor green   ; Poluição tóxica
+        ]
+      ]
     ]
   ]
 end
+
 to recarregar-instantaneamente
-  set energia energia-inicial  ; Recarrega totalmente a energia
+  set energia energia + ([eficiencia] of patch-here) * 10
+  if energia > energia-inicial [
+    set energia energia-inicial
+  ]
   set recarregamento? false
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-201
-10
-773
-583
+190
+57
+837
+705
 -1
 -1
-17.1
+19.364
 1
 10
 1
@@ -282,9 +504,9 @@ ticks
 30.0
 
 BUTTON
-59
+67
 63
-123
+131
 96
 NIL
 Setup
@@ -341,7 +563,7 @@ vezes
 vezes
 1
 50
-25.0
+30.0
 1
 1
 NIL
@@ -356,7 +578,7 @@ prob-polluter-1
 prob-polluter-1
 0
 1
-0.4
+0.0
 0.05
 1
 NIL
@@ -371,7 +593,7 @@ prob-polluter-2
 prob-polluter-2
 0
 1
-0.4
+0.15
 0.05
 1
 NIL
@@ -386,17 +608,17 @@ prob-polluter-3
 prob-polluter-3
 0
 1
-0.3
+0.15
 0.05
 1
 NIL
 HORIZONTAL
 
 SLIDER
-801
-71
-973
-104
+968
+117
+1140
+150
 postos-deposito
 postos-deposito
 2
@@ -408,10 +630,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-802
-117
-974
-150
+969
+163
+1141
+196
 capacidade-detritos
 capacidade-detritos
 1
@@ -423,25 +645,25 @@ NIL
 HORIZONTAL
 
 SLIDER
-801
-18
-973
-51
+968
+64
+1140
+97
 energia-inicial
 energia-inicial
 0
 100
-31.0
+40.0
 1
 1
 NIL
 HORIZONTAL
 
 MONITOR
-821
-245
-984
-290
+988
+291
+1151
+336
 Numero de detritos cleaner
 [detritos] of cleaner
 17
@@ -449,10 +671,10 @@ Numero de detritos cleaner
 11
 
 MONITOR
-821
-309
-878
+992
 354
+1049
+399
 Energia
 [energia] of cleaner
 17
@@ -460,10 +682,10 @@ Energia
 11
 
 SLIDER
-801
-168
-973
-201
+968
+214
+1140
+247
 tempo-carregamento
 tempo-carregamento
 1
@@ -475,10 +697,10 @@ NIL
 HORIZONTAL
 
 PLOT
-837
-472
-1037
-622
+1004
+518
+1204
+668
 Evolução da Sujeira
 ticks
 Sujeira 
@@ -493,10 +715,10 @@ PENS
 "Sujeira" 1.0 0 -7500403 true "" ""
 
 MONITOR
-822
-374
-957
-419
+989
+420
+1124
+465
 NIL
 quantidade-de-sujeira
 17
