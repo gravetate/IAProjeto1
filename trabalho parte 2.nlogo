@@ -1,8 +1,17 @@
-extensions [table]
+extensions [table py]
 turtles-own [ tipo detritos memoria  tipo-de-poluicao probabilidade-depositos]
 patches-own [ sujo? deposito? tempo-limpo painel-solar? painel-usado? tempo-de-vida eficiencia  tipo-de-lixo ]
 
 globals [ cleaner polluter-tipos recarregamento? energia tempo-desde-carregamento quantidade-de-lixo solar-timer openSet closedSet cameFrom gScore fScore patches-recentes dirty-patches quantidade-de-limpo bomba-usada? bomba-temporizador]
+
+to tocar-som
+  ;; Configurar a execução do Python
+  py:setup "C:/Program Files/Python312/python.exe"
+  py:python "exec(open('sound.py').read())"
+
+  ;; Chamar a função Python que toca o som
+  py:python "tocar_som()"
+end
 
 to setup
   clear-all
@@ -798,7 +807,6 @@ to recarregar-instantaneamente
   ]
   set recarregamento? false
 end
-
 
 @#$#@#$#@
 GRAPHICS-WINDOW
