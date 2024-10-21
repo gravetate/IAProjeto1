@@ -1,5 +1,5 @@
-turtles-own [ tipo detritos probabilidade-depositos memoria patches-recentes ]
-patches-own [ sujo? deposito? tempo-limpo ]
+turtles-own [ tipo detritos probabilidade-depositos memoria patches-recentes tipo-de-poluicao]
+patches-own [ sujo? deposito? tempo-limpo tipo-de-lixo]
 globals [ cleaner polluter-tipos recarregamento? energia tempo-desde-carregamento quantidade-de-sujeira ]
 
 to setup
@@ -37,7 +37,6 @@ to setup
     set patches-recentes []
 
   ]
-
   ; Criar Polluters
   create-polluters
 
@@ -61,6 +60,7 @@ create-turtles 1 [
   set shape "truck trash"
   setxy random-xcor random-ycor
   set probabilidade-depositos prob-polluter-1
+  set tipo-de-poluicao "castanho"
 ]
 
 create-turtles 1 [
@@ -70,6 +70,7 @@ create-turtles 1 [
   set shape "truck trash"
   setxy random-xcor random-ycor
   set probabilidade-depositos prob-polluter-2
+  set tipo-de-poluicao "roxo"
 ]
 
 create-turtles 1 [
@@ -78,6 +79,7 @@ create-turtles 1 [
   set shape "truck trash"
   setxy random-xcor random-ycor
   set probabilidade-depositos prob-polluter-3
+  set tipo-de-poluicao "vermelho"
 ]
 end
 
@@ -198,31 +200,36 @@ end
 to mover-e-poluente
   let patches-vistos patches in-radius 3
 
-  ; Convert the agentset to a list using 'sort'
-  let patches-vistos-list sort patches-vistos
+  ; Filtra patches limpos
+  let patches-limpos patches-vistos with [not sujo?]
 
-  ; Use 'filter' to get a list of clean patches
-  let patches-limpos filter [not sujo?] patches-vistos-list
-
-  ; Convert the list of clean patches back into an agentset
-  let patches-limpos-agentset patch-set patches-limpos
-
-  ; If there are cleaner patches nearby, move toward the cleanest one
-  ifelse any? patches-limpos-agentset [
-    let patch-alvo max-one-of patches-limpos-agentset [ticks - [tempo-limpo] of self]
+  ; Se houver patches limpos, mover para o mais recente
+  ifelse any? patches-limpos [
+    let patch-alvo max-one-of patches-limpos [ticks - [tempo-limpo] of self]
     face patch-alvo
     fd 0.8
   ] [
-    ; If no clean patches are nearby, move randomly
+    ; Se não houver patches limpos, mover aleatoriamente
     right random 360
     fd 1
   ]
 
-  ; Dirty the current patch based on probability
+  ; Sujar o patch com base na probabilidade
   if not [sujo?] of patch-here and random-float 1 < probabilidade-depositos [
     ask patch-here [
       set sujo? true
-      set pcolor yellow
+      set tipo-de-lixo [tipo-de-poluicao] of myself  ;; Define o tipo de lixo com base no poluidor
+
+      ;; Atribui a cor do patch de acordo com o tipo de poluição
+      if tipo-de-lixo = "castanho" [
+        set pcolor brown  ; Poluição castanha
+      ]
+      if tipo-de-lixo = "roxo" [
+        set pcolor violet  ; Poluição roxa
+      ]
+      if tipo-de-lixo = "vermelho" [
+        set pcolor red  ; Poluição vermelha
+      ]
     ]
   ]
 end
