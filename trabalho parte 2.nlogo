@@ -1,120 +1,150 @@
 extensions [table py]
-turtles-own [ tipo detritos memoria  tipo-de-poluicao probabilidade-depositos]
-patches-own [ sujo? deposito? tempo-limpo painel-solar? painel-usado? tempo-de-vida eficiencia  tipo-de-lixo ]
+turtles-own [ tipo detritos memoria tipo-de-poluicao probabilidade-depositos]
+patches-own [ sujo? deposito? tempo-limpo painel-solar? painel-usado? tempo-de-vida eficiencia tipo-de-lixo ]
 
 globals [ cleaner polluter-tipos recarregamento? energia tempo-desde-carregamento quantidade-de-lixo solar-timer openSet closedSet cameFrom gScore fScore patches-recentes dirty-patches quantidade-de-limpo bomba-usada? bomba-temporizador]
 
+
+; ATENÇÃO: Requisitos para rodar este modelo
+; ------------------------------------------
+; Este modelo utiliza a extensão "py" do NetLogo, que permite a integração com Python.
+; Para que o modelo funcione corretamente, é necessário ter o Python instalado no seu sistema.
+; Além disso, o modelo depende da biblioteca 'pygame' para tcar a musica e o efeito snoro.
+;
+; Certifique-se de seguir os seguintes passos antes de rodar o modelo:
+;
+; 1. Instale o Python (versão 3.x):
+;    - Acesse https://www.python.org/downloads/ e baixe a versão mais recente do Python.
+;    - Certifique-se de marcar a opção "Add Python to PATH" durante a instalação.
+;
+; 2. Instale a biblioteca 'pygame':
+;    - Abra um terminal/linha de comando e execute o seguinte comando para instalar 'pygame':
+;      pip install pygame
+;
+; 3. Configure o caminho do Python no NetLogo:
+;    - Na aba "Python/configurações" , insira o caminho do executável do Python (geralmente algo como "C:\Python39\python.exe" ou "/usr/bin/python3").
+;    - Esse caminho deve apontar para o local onde o Python está instalado no seu sistema.
+;
+; Após garantir que Python e pygame estão instalados e o caminho do Python está configurado no NetLogo,
+; você estará pronto para executar o modelo sem problemas.
+
+
+
+
+; Toca música de fundo usando Python
 to tocar-som
-  py:setup "python"  ;; Caminho para o Python
+  py:setup "python"
   py:run "exec(open('sound.py').read())"
   show "A música está tocando no background!"
 end
 
+; Para a música de fundo
 to parar-som
   py:run "pygame.mixer.music.stop()"
   show "A música foi parada!"
 end
-to effectbomb
-    py:run "exec(open('soundEffect.py').read())"
-    show "Cá vai bombaaa!!"
 
+; Toca efeito sonoro da bomba
+to effectbomb
+  py:run "exec(open('soundEffect.py').read())"
+  show "Cá vai bombaaa!!"
 end
+
+; Inicializa o modelo
 to setup
   clear-all
 
-  ; Variáveis ajustáveis pelo utilizador
-  set  energia energia-inicial   ; Energia inicial do Cleaner, ajustada via slider
-  set capacidade-detritos capacidade-detritos ; Capacidade máxima de detritos ajustável via slider
-  set postos-deposito postos-deposito  ; Número de postos de depósito ajustável
-  set recarregamento? false     ; Inicialmente, não está recarregando
+  ; Inicializa variáveis principais
+  set energia energia-inicial
+  set capacidade-detritos capacidade-detritos
+  set postos-deposito postos-deposito
+  set recarregamento? false
   set tempo-desde-carregamento 0
   set solar-timer 0
   set patches-recentes []
   set dirty-patches no-patches
-  set bomba-usada? false   ; A bomba ainda não foi usada
-  set bomba-temporizador 0  ; O temporizador para a bomba começa em 0
+  set bomba-usada? false
+  set bomba-temporizador 0
 
-  tocar-som
+  tocar-som  ; Toca a música de fundo
 
-
-  ; Limpar o ambiente
+  ; Limpa o ambiente
   ask patches [
     set sujo? false
     set deposito? false
     set pcolor white
     set tempo-limpo 0
     set painel-solar? false
-
-
   ]
 
-  ; Criar contentores de depósito
+  ; Cria postos de depósito e o Cleaner
   create-contentores postos-deposito
-
-  ; Criar Cleaner no canto inferior esquerdo
   create-turtles 1 [
     set tipo "cleaner"
     set energia energia-inicial
     set detritos 0
-    setxy min-pxcor min-pycor  ;; Posição inicial
+    setxy min-pxcor min-pycor
     set cleaner self
     set size 2
     set shape "cleaner"
     set memoria []
-
-
   ]
 
-  ; Criar Polluters
+  ; Cria os Polluters
   create-polluters
 
-  reset-ticks
-  clear-all-plots
+  reset-ticks  ; Reinicia o tempo
+  clear-all-plots  ; Limpa os gráficos
 end
 
+; Cria um número 'n' de contentores de depósito
 to create-contentores [ n ]
   repeat n [
-    let patch-alvo one-of patches with [not deposito?]
+    let patch-alvo one-of patches with [not deposito?]  ; Escolhe um patch que ainda não tem depósito
     ask patch-alvo [
-      set deposito? true
-      set pcolor black  ; Contentores são pretos
-
+      set deposito? true  ; Marca o patch como depósito
+      set pcolor black  ; Define a cor do depósito como preto
     ]
   ]
 end
+
+; Cria um painel solar num patch disponível, se o limite máximo de painéis solares não for atingido
 to create-random-solar-panel
-  if count patches with [painel-solar?] < 5 [  ; max-paineis-solares definido como slider ou variável
-    if random 100 < 5 [
-      let patch-alvo one-of patches with [not painel-solar? and not sujo? and not deposito?]
+  if count patches with [painel-solar?] < 5 [  ; Verifica se já há menos de 5 painéis solares
+    if random 100 < 5 [  ; Pequena chance de criar um novo painel solar
+      let patch-alvo one-of patches with [not painel-solar? and not sujo? and not deposito?]  ; Escolhe um patch disponível
       ask patch-alvo [
-        set painel-solar? true
-        set pcolor blue
-        set tempo-de-vida random 35 + 1
-        set eficiencia random 3 + 1
-        set painel-usado? false  ; O painel ainda não foi utilizado
+        set painel-solar? true  ; Marca o patch com um painel solar
+        set pcolor blue  ; Define a cor do patch como azul
+        set tempo-de-vida random 35 + 1  ; Define o tempo de vida do painel
+        set eficiencia random 3 + 1  ; Define a eficiência do painel
+        set painel-usado? false  ; O painel ainda não foi usado
       ]
     ]
   ]
 end
+
+; Verifica o tempo de vida dos painéis solares e remove-os quando o tempo acabar
 to verificar-paineis-solares
   ask patches with [painel-solar?] [
-    set tempo-de-vida tempo-de-vida - 1  ; Diminui o tempo de vida a cada tick
+    set tempo-de-vida tempo-de-vida - 1  ; Diminui o tempo de vida do painel a cada tick
     if tempo-de-vida <= 0 [
-      set painel-solar? false  ; Remove o painel solar
-      set pcolor white         ; Volta a cor do patch ao normal
+      set painel-solar? false  ; Remove o status de painel solar
+      set pcolor white  ; Volta a cor do patch ao normal
     ]
   ]
 end
 
+; Cria três tipos diferentes de polluters (poluidores) com níveis variados de poluição
 to create-polluters
   ; Criar o primeiro polluter com poluição leve
   create-turtles 1 [
     set tipo "polluter"
     set size 1.8
     set shape "truck trash"
-    setxy random-xcor random-ycor
-    set tipo-de-poluicao "leve"
-    set probabilidade-depositos prob-polluter-1
+    setxy random-xcor random-ycor  ; Coloca o polluter numa posição aleatória
+    set tipo-de-poluicao "leve"  ; Define o tipo de poluição como leve
+    set probabilidade-depositos prob-polluter-1  ; Probabilidade de depositar lixo
   ]
 
   ; Criar o segundo polluter com poluição pesada
@@ -123,7 +153,7 @@ to create-polluters
     set size 1.8
     set shape "truck trash"
     setxy random-xcor random-ycor
-    set tipo-de-poluicao "pesada"
+    set tipo-de-poluicao "pesada"  ; Define o tipo de poluição como pesada
     set probabilidade-depositos prob-polluter-2
   ]
 
@@ -133,177 +163,194 @@ to create-polluters
     set size 1.8
     set shape "truck trash"
     setxy random-xcor random-ycor
-    set tipo-de-poluicao "toxica"
+    set tipo-de-poluicao "toxica"  ; Define o tipo de poluição como tóxica
     set probabilidade-depositos prob-polluter-3
   ]
 end
 
 
+
+; Executa o modelo uma vez e para
 to go_once
   go
   stop
 end
 
+; Executa o modelo 'vezes' vezes (definido pelo utilizador)
 to go_n
   repeat vezes [ go ]
 end
 
-
-
+; Função principal que é executada a cada tick
 to go
 
-
+  ; O Cleaner executa suas ações programadas
   ask cleaner [
     schedule-actions
   ]
+
+  ; Os Polluters movem-se e depositam lixo
   ask turtles with [ tipo = "polluter" ] [ mover-e-poluente ]
+
+  ; Tenta criar painéis solares aleatórios e verifica os existentes
   create-random-solar-panel
   verificar-paineis-solares
 
+  ; Atualiza a quantidade de lixo no ambiente
   set quantidade-de-lixo count patches with [ sujo? ]
-  set-current-plot "Evolução do lixo"
+  set-current-plot "Evolução do lixo"  ; Seleciona o gráfico para plotar o lixo
   set-current-plot-pen "lixo"
   plot quantidade-de-lixo
 
+  ; Atualiza a quantidade de patches limpos
   set quantidade-de-limpo count patches with [ not sujo? ]
   set-current-plot "Evolução do lixo limpo"
   set-current-plot-pen "lixo limpo"
   plot quantidade-de-limpo
-  tick
+
+  tick  ; Avança um tick no modelo
 end
 
 to schedule-actions
-  ; Verifica se o Cleaner está recarregando
-
-    ifelse bomba-temporizador > 0 [
-    set bomba-temporizador bomba-temporizador - 1   ; Reduz o temporizador a cada tick
-    print (word "Cleaner parado. Restam " bomba-temporizador " ticks.")
-    stop
+  ; Verifica se o Cleaner está parado devido à ativação da bomba
+  ifelse bomba-temporizador > 0 [
+    set bomba-temporizador bomba-temporizador - 1  ; Reduz o temporizador a cada tick
+    print (word "Cleaner parado. Restam " bomba-temporizador " ticks.")  ; Exibe quantos ticks faltam para o Cleaner voltar a mover-se
+    stop  ; O Cleaner não faz nada enquanto o temporizador está ativo
   ][
 
-    if recarregamento?  [
-    continuar-recarregar
-    stop
-  ]
-
-  ; Prioridade 1: Descarregar detritos se a capacidade estiver cheia
-  if detritos >= capacidade-detritos [
-    print "Capacidade de detritos cheia. Planejando descarregar..."
-    let destino planejar-viagem "deposito"
-    ifelse destino = nobody [
-      print "Nenhum depósito disponível. Continuando a procurar patches sujos..."
-      mover-e-limpar
-    ][
-      let caminho planejar-caminho destino
-      ifelse not empty? caminho [
-        seguir-caminho caminho
-        ; Descarregar ao chegar no depósito
-        descarregar
-      ][
-        print "Caminho não gerado corretamente para o depósito."
-        mover-e-limpar
-      ]
+    ; Verifica se o Cleaner está a recarregar
+    if recarregamento? [
+      continuar-recarregar  ; Continua o processo de recarregamento
+      stop
     ]
-    stop
-  ]
-   ; Prioridade 2: Recarregar se a energia estiver baixa
-  if energia < energia-inicial * 0.2 and not recarregamento? [
-    print "Energia muito baixa. Planejando recarregar..."
-    let destino planejar-viagem "painel-solar"
-    ifelse destino = nobody [
-      print "Nenhum painel solar disponível. Continuando a procurar patches sujos..."
-      mover-e-limpar
-    ][
-      print "Painel solar encontrado. Planejando caminho..."
-      let caminho planejar-caminho destino
-      ifelse not empty? caminho [
-        seguir-caminho caminho
-        ; Recarregar ao chegar no painel solar
-        if [painel-solar?] of patch-here and not [painel-usado?] of patch-here [
-          recarregar-instantaneamente
-          ask patch-here [
-            set painel-usado? true
-            set pcolor gray
-          ]
+
+    ; Prioridade 1: Descarregar detritos se a capacidade estiver cheia
+    if detritos >= capacidade-detritos [
+      print "Capacidade de detritos cheia. Planejando descarregar..."
+      let destino planejar-viagem "deposito"  ; Encontra o destino de um depósito
+      ifelse destino = nobody [
+        print "Nenhum depósito disponível. Continuando a procurar patches sujos..."
+        mover-e-limpar  ; Se não houver depósito, continua a mover e limpar
+      ][
+        let caminho planejar-caminho destino  ; Planeja o caminho até o depósito
+        ifelse not empty? caminho [
+          seguir-caminho caminho  ; Segue o caminho gerado até o depósito
+          descarregar  ; Descarrega os detritos ao chegar no destino
+        ][
+          print "Caminho não gerado corretamente para o depósito."
+          mover-e-limpar  ; Se o caminho falhar, continua a mover e limpar
         ]
-      ][
-        print "Caminho não gerado corretamente para o painel solar."
-        mover-e-limpar
       ]
+      stop
     ]
-    stop
+
+    ; Prioridade 2: Recarregar se a energia estiver baixa
+    if energia < energia-inicial * 0.2 and not recarregamento? [
+      print "Energia muito baixa. Planejando recarregar..."
+      let destino planejar-viagem "painel-solar"  ; Encontra o destino de um painel solar
+      ifelse destino = nobody [
+        print "Nenhum painel solar disponível. Continuando a procurar patches sujos..."
+        mover-e-limpar  ; Se não houver painel solar, continua a mover e limpar
+      ][
+        print "Painel solar encontrado. Planejando caminho..."
+        let caminho planejar-caminho destino  ; Planeja o caminho até o painel solar
+        ifelse not empty? caminho [
+          seguir-caminho caminho  ; Segue o caminho gerado até o painel solar
+          ; Recarrega ao chegar no painel solar se ainda não foi usado
+          if [painel-solar?] of patch-here and not [painel-usado?] of patch-here [
+            recarregar-instantaneamente
+            ask patch-here [
+              set painel-usado? true  ; Marca o painel solar como usado
+              set pcolor gray  ; Muda a cor do patch para indicar que o painel foi usado
+            ]
+          ]
+        ][
+          print "Caminho não gerado corretamente para o painel solar."
+          mover-e-limpar  ; Se o caminho falhar, continua a mover e limpar
+        ]
+      ]
+      stop
+    ]
+
+    ; Prioridade 3: Limpeza inteligente se houver muito lixo no ambiente
+    if quantidade-de-lixo >= 5 [
+      mover-e-limpar
+      stop
+    ]
+
+    ; Prioridade 4: Exploração aleatória se não houver patches sujos visíveis
+    andar-explorar
   ]
-
-
-  ; Prioridade 3: Limpeza inteligente e eficiente
-  if quantidade-de-lixo >= 5 [
-    mover-e-limpar
-    stop
-  ]
-
-  ; Prioridade 4: Exploração aleatória se não houver patches sujos visíveis
-  andar-explorar
-  ]
-
 end
 
+; Função A* (A-Star) que encontra o caminho mais curto de 'start' até 'goal'.
+; Utiliza uma heurística para otimizar a busca e calcula o custo total do caminho.
 to-report a-star [start goal]
-  ;; Initialize
-  set openSet (list (list [pxcor] of start [pycor] of start))
-  set closedSet []
-  set cameFrom table:make
-  set gScore table:make
-  set fScore table:make
+  ;; Inicializa as estruturas de dados para o A*
+  set openSet (list (list [pxcor] of start [pycor] of start))  ; Nós a serem explorados
+  set closedSet []  ; Nós já explorados
+  set cameFrom table:make  ; Tabela que armazena o caminho reconstruído
+  set gScore table:make  ; Custo do caminho do nó inicial até um determinado nó
+  set fScore table:make  ; Custo total estimado (gScore + heurística)
 
+  ;; Inicializa os scores do nó de partida
   table:put gScore (list [pxcor] of start [pycor] of start) 0
   table:put fScore (list [pxcor] of start [pycor] of start) (heuristic-cost start goal)
 
+  ;; Enquanto houver nós no openSet (nós a serem explorados)
   while [not empty? openSet] [
-    ;; Find the node in openSet with the lowest fScore
+
+    ;; Encontra o nó no openSet com o menor fScore
     let current-coords get-node-with-lowest-fScore openSet
     let current patch (item 0 current-coords) (item 1 current-coords)
 
+    ;; Se o objetivo foi alcançado, reconstrói e retorna o caminho
     if current = goal [
       let path-and-energy reconstruct-path current-coords
       report path-and-energy
     ]
 
+    ;; Move o nó atual do openSet para o closedSet
     set openSet remove current-coords openSet
     set closedSet lput current-coords closedSet
 
-    ;; Get neighbor patches
+    ;; Obtém os vizinhos (neighbors4 = 4 vizinhos ao redor)
     let neighbor-patches [neighbors4] of current
     let valid-neighbors neighbor-patches with [
-      not member? (list pxcor pycor) closedSet
-      and pxcor >= min-pxcor and pxcor <= max-pxcor
+      not member? (list pxcor pycor) closedSet  ; Exclui nós já explorados
+      and pxcor >= min-pxcor and pxcor <= max-pxcor  ; Mantém dentro dos limites
       and pycor >= min-pycor and pycor <= max-pycor
     ]
     let neighbor-list [self] of valid-neighbors
 
+    ;; Avalia cada vizinho
     foreach neighbor-list [neighbor ->
       let neighbor-coords (list [pxcor] of neighbor [pycor] of neighbor)
-      let movement-cost 1
-      let neighbor-cost (calcular-custo-de-patch neighbor)
+      let movement-cost 1  ; Custo de mover-se para o vizinho
+      let neighbor-cost (calcular-custo-de-patch neighbor)  ; Custo adicional com base no patch
 
-      ;; Retrieve curr-gScore safely
-      let curr-gScore 999999  ; Default to high value
+      ;; Recupera gScore atual de forma segura (define valor alto se não existir)
+      let curr-gScore 999999
       if table:has-key? gScore current-coords [
         set curr-gScore table:get gScore current-coords
       ]
 
       let tentative-gScore (curr-gScore + movement-cost + neighbor-cost)
 
-      ;; Retrieve neighbor-gScore safely
-      let neighbor-gScore 999999  ; Default to high value
+      ;; Recupera o gScore do vizinho de forma segura
+      let neighbor-gScore 999999
       if table:has-key? gScore neighbor-coords [
         set neighbor-gScore table:get gScore neighbor-coords
       ]
 
+      ;; Se o gScore estimado for menor, atualiza as tabelas
       if (tentative-gScore < neighbor-gScore) [
-        table:put cameFrom neighbor-coords current-coords
-        table:put gScore neighbor-coords tentative-gScore
-        table:put fScore neighbor-coords (tentative-gScore + heuristic-cost neighbor goal)
+        table:put cameFrom neighbor-coords current-coords  ; Registra de onde veio o vizinho
+        table:put gScore neighbor-coords tentative-gScore  ; Atualiza o gScore
+        table:put fScore neighbor-coords (tentative-gScore + heuristic-cost neighbor goal)  ; Atualiza o fScore
 
+        ;; Adiciona o vizinho ao openSet se ainda não estiver lá
         if not member? neighbor-coords openSet [
           set openSet lput neighbor-coords openSet
         ]
@@ -311,36 +358,39 @@ to-report a-star [start goal]
     ]
   ]
 
-  ;; No path found
+  ;; Se não encontrar um caminho, retorna uma lista vazia
   report []
 end
 
 
+; Função que retorna o nó com o menor fScore de uma lista de nós.
+; Isso é usado no algoritmo A* para selecionar o próximo nó a ser explorado.
 to-report get-node-with-lowest-fScore [node-list]
   let min-node nobody
-  let min-fScore 999999
+  let min-fScore 999999  ; Define um valor inicial alto para fScore
   foreach node-list [node ->
-    let fScore-value 999999
-    if table:has-key? fScore node [
-      set fScore-value table:get fScore node
+    let fScore-value 999999  ; Define um valor alto caso o fScore do nó não exista
+    if table:has-key? fScore node [  ; Verifica se o fScore do nó existe na tabela
+      set fScore-value table:get fScore node  ; Obtém o fScore do nó
     ]
-    if fScore-value < min-fScore [
+    if fScore-value < min-fScore [  ; Compara o fScore atual com o mínimo
       set min-fScore fScore-value
-      set min-node node
+      set min-node node  ; Atualiza o nó com o menor fScore
     ]
   ]
-  report min-node
+  report min-node  ; Retorna o nó com o menor fScore
 end
 
-
-
-
+; Função que calcula a heurística de custo, utilizando a distância Euclidiana entre 'from' e 'pa'.
+; A distância Euclidiana é usada como uma aproximação do custo restante até o destino.
 to-report heuristic-cost [from pa]
-  ; Euclidean distance as the heuristic
-  report [distance from ] of  pa
+  report [distance from ] of pa  ; Calcula a distância entre os dois patches
 end
+
+; Função que calcula o custo de mover-se para um patch específico.
+; O custo é aumentado se o patch estiver sujo, variando conforme o tipo de lixo (leve, pesado ou tóxico).
 to-report calcular-custo-de-patch [alvo-patch]
-  let custo 1  ; Custo base para movimentação
+  let custo 1  ; Define o custo base para movimentação
 
   ; Aumenta o custo se o patch estiver sujo
   if [sujo?] of alvo-patch [
@@ -352,170 +402,173 @@ to-report calcular-custo-de-patch [alvo-patch]
     ]
   ]
 
-
-  report custo
+  report custo  ; Retorna o custo final
 end
 
+; Função que reconstrói o caminho do algoritmo A* após atingir o objetivo.
+; Volta pelos nós armazenados na tabela 'cameFrom' para montar o caminho completo,
+; e calcula o custo total de energia ao longo desse caminho.
 to-report reconstruct-path [current]
-  let total-path (list current)
-  let total-energy 0
+  let total-path (list current)  ; Inicia o caminho com o nó atual (objetivo)
+  let total-energy 0  ; Inicializa o custo total de energia
 
-  ; Reconstruct the path by going back through the cameFrom table
+  ; Reconstroi o caminho voltando pelo 'cameFrom'
   while [ table:has-key? cameFrom current ] [
-    set current table:get cameFrom current
-    set total-path fput current total-path
+    set current table:get cameFrom current  ; Vai para o nó anterior no caminho
+    set total-path fput current total-path  ; Adiciona o nó ao caminho
 
-    ; Transformar coordenadas em agente patch antes de passar para calcular-custo-de-patch
-    let patch-atual patch (item 0 current) (item 1 current)  ;; Converter coordenadas em patch
-    set total-energy total-energy + calcular-custo-de-patch patch-atual  ; Add energy cost for this patch
+    ; Calcula o custo de energia para cada patch no caminho
+    let patch-atual patch (item 0 current) (item 1 current)  ; Converte coordenadas em patch
+    set total-energy total-energy + calcular-custo-de-patch patch-atual  ; Adiciona o custo de energia do patch
   ]
 
-  ; Report both the path and the total energy cost
+  ; Retorna o caminho e o custo total de energia
   report (list total-path total-energy)
 end
 
+; Função que reconstrói o caminho de forma parcial, semelhante à anterior.
+; Usada para quando não se deseja reconstruir o caminho completo,
+; retornando o caminho atual e o custo até o ponto em que se encontra.
 to-report reconstruct-path-parcial [current]
-  let total-path (list current)
-  let total-energy 0
+  let total-path (list current)  ; Inicia o caminho com o nó atual
+  let total-energy 0  ; Inicializa o custo total de energia
 
-  ; Reconstruct the path by going back through the cameFrom table
+  ; Reconstroi o caminho voltando pelo 'cameFrom'
   while [ table:has-key? cameFrom current ] [
-    set current table:get cameFrom current
-    set total-path fput current total-path
+    set current table:get cameFrom current  ; Vai para o nó anterior no caminho
+    set total-path fput current total-path  ; Adiciona o nó ao caminho
 
-    ; Transformar coordenadas em agente patch antes de passar para calcular-custo-de-patch
-    let patch-atual patch (item 0 current) (item 1 current)
-    set total-energy total-energy + calcular-custo-de-patch patch-atual  ; Add energy cost for this patch
+    ; Calcula o custo de energia para cada patch no caminho
+    let patch-atual patch (item 0 current) (item 1 current)  ; Converte coordenadas em patch
+    set total-energy total-energy + calcular-custo-de-patch patch-atual  ; Adiciona o custo de energia do patch
   ]
 
-  ; Report both the path and the energy cost for this partial path
+  ; Retorna o caminho parcial e o custo de energia até esse ponto
   report (list total-path total-energy)
 end
 
 
 
+; Função que planeja a viagem para o destino mais próximo com base no objetivo ('painel-solar' ou 'deposito').
+; Retorna o patch destino mais próximo que cumpre o objetivo, ou 'nobody' se nenhum for encontrado.
 to-report planejar-viagem [objetivo]
-  let destino nobody
+  let destino nobody  ; Inicializa o destino como 'nobody'
 
   ; Encontrar o destino com base no objetivo
   if objetivo = "painel-solar" [
     print "Procurando painel solar mais próximo..."
-    set destino min-one-of patches with [painel-solar? and not painel-usado? ] [distance myself]
+    set destino min-one-of patches with [painel-solar? and not painel-usado? ] [distance myself]  ; Encontra o painel solar mais próximo que ainda não foi usado
   ]
   if objetivo = "deposito" [
     print "Procurando depósito mais próximo..."
-    set destino min-one-of patches with [deposito?] [distance myself]
+    set destino min-one-of patches with [deposito?] [distance myself]  ; Encontra o depósito mais próximo
   ]
 
-  ; Verificar se há um destino válido
+  ; Verifica se foi encontrado um destino válido
   if destino = nobody [
     print (word "Nenhum " objetivo " encontrado! Cancelando planejamento.")
-    report nobody  ; Retorna nobody se não encontrar destino
+    report nobody  ; Retorna 'nobody' se nenhum destino for encontrado
   ]
 
-  ; Logando o destino encontrado
+  ; Loga o destino encontrado
   print (word "Destino encontrado: " destino ", distância: " distance destino)
 
   report destino  ; Retorna o destino encontrado
 end
 
-
+; Função que planeja o caminho do ponto atual ('patch-here') até o 'destino' usando o algoritmo A*.
+; Retorna o caminho gerado ou um caminho vazio se não houver caminho viável.
 to-report planejar-caminho [destino]
-  ; Gera o caminho com A*
+  ; Gera o caminho com o algoritmo A* do ponto atual até o destino
   let caminho a-star patch-here destino
 
-  ; Loga o processo do A* se necessário
+  ; Loga se o caminho foi encontrado ou não
   ifelse empty? caminho [
     print (word "Nenhum caminho viável encontrado até o destino: " destino)
   ][
     print "Caminho viável encontrado com A*."
   ]
 
-  report caminho
+  report caminho  ; Retorna o caminho gerado
 end
 
 
 
 
+; Função que faz o agente seguir o caminho planejado, patch por patch.
+; Penaliza a energia ao passar por patches sujos e permite que o agente limpe o lixo que encontrar.
 to seguir-caminho [caminho]
-  let total-path first caminho  ; Extrair o caminho
+  let total-path first caminho  ; Extrai o caminho a ser seguido
   print "Seguindo o caminho planejado..."
 
+  ; Percorre cada etapa do caminho
   foreach total-path [ etapa ->
     let x (item 0 etapa)
     let y (item 1 etapa)
-    let patch-alvo patch x y  ; Converter coordenadas para patch
+    let patch-alvo patch x y  ; Converte as coordenadas para o patch alvo
     print (word "Movendo para patch: " patch-alvo)
 
-    face patch-alvo
-    fd 1
+    face patch-alvo  ; Faz o agente "encarar" o patch de destino
+    fd 1  ; Move o agente um passo na direção do patch
 
-    ; Verificar se o patch tem lixo e limpar
-
-
-    ; Penalização de energia ao passar por patches sujos
+    ; Penaliza a energia ao passar por patches sujos
     ifelse [sujo?] of patch-alvo [
+      ; Se o patch contiver lixo pesado, penaliza 25% da energia inicial
       ifelse [tipo-de-lixo] of patch-alvo = "pesada" [
-        set energia energia - (energia-inicial * 0.25)  ; Penaliza em 25% a energia inicial
-        print (word "Passou por lixo pesada. Energia reduzida em 25%. Energia atual: " energia)
+        set energia energia - (energia-inicial * 0.25)
+        print (word "Passou por lixo pesado. Energia reduzida em 25%. Energia atual: " energia)
       ][
-
+        ; Se o patch contiver lixo tóxico, penaliza 50% da energia inicial
         ifelse [tipo-de-lixo] of patch-alvo = "toxica" [
-          set energia energia - (energia-inicial * 0.5)  ; Penaliza em 50% a energia inicial
-          print (word "Passou por lixo tóxica. Energia reduzida em 50%. Energia atual: " energia)
+          set energia energia - (energia-inicial * 0.5)
+          print (word "Passou por lixo tóxico. Energia reduzida em 50%. Energia atual: " energia)
         ][
+          ; Para lixo leve, penaliza apenas 1 ponto de energia
           set energia energia - 1
           print (word "Passou por lixo leve. Energia reduzida em 1. Energia atual: " energia)
         ]
       ]
-
-
     ][
-          set energia energia - 1
+      ; Penaliza 1 ponto de energia se o patch não estiver sujo
+      set energia energia - 1
     ]
 
+    ; Verifica se o patch tem lixo e limpa-o, se o cleaner não estiver cheio
     if [sujo?] of patch-alvo [
-
-      ifelse detritos <= capacidade-detritos[
+      ifelse detritos <= capacidade-detritos [
         set detritos detritos + 1
-         print "Patch sujo encontrado! Limpando..."
+        print "Patch sujo encontrado! Limpando..."
         ask patch-alvo [
-          set sujo? false
-          set pcolor white  ; Volta à cor original
-          set tempo-limpo ticks  ; Marca o tempo em que foi limpo
+          set sujo? false  ; Marca o patch como limpo
+          set pcolor white  ; Retorna a cor original do patch
+          set tempo-limpo ticks  ; Registra o tempo em que o patch foi limpo
         ]
       ][
-
-        print "Cleaner cheio..."
+        print "Cleaner cheio..."  ; Caso o cleaner esteja cheio, ele não limpa
       ]
-
-
-
     ]
 
-    ; Reduzir a energia a cada movimento
-
+    ; Reduz a energia a cada movimento
     print (word "Energia restante: " energia)
 
-    ; Verificar se a energia acabou
+    ; Verifica se a energia acabou e recarrega se necessário
     if energia <= 0 [
       print "Energia esgotada! Necessário recarregar."
       recarregar
       stop
     ]
   ]
-  print "Chegou ao destino!"
+  print "Chegou ao destino!"  ; Mensagem indicando que o destino foi alcançado
 end
 
 
-
-
+; Função que loga os detalhes do caminho gerado pelo A*, incluindo as coordenadas e a energia estimada.
 to logar-detalhes-do-caminho [caminho]
-  ; Se o caminho estiver vazio, não foi gerado corretamente
+  ; Se o caminho estiver vazio, exibe uma mensagem indicando que não foi gerado corretamente
   ifelse empty? caminho [
     print "Nenhum caminho viável foi gerado."
   ][
-    ; Caso um caminho tenha sido gerado, logamos os detalhes
+    ; Se o caminho foi gerado, loga as coordenadas e outros detalhes
     print (word "Caminho gerado: " caminho)
 
     ; Loga as coordenadas de cada patch no caminho
@@ -523,29 +576,31 @@ to logar-detalhes-do-caminho [caminho]
       print (word "Patch no caminho: " [pxcor] of patch-no-caminho "," [pycor] of patch-no-caminho)
     ]
 
-    ; Estimativa de energia necessária
+    ; Calcula e exibe a energia estimada necessária para percorrer o caminho
     let energia-necessaria estimar-energia-necessaria caminho
     print (word "Energia estimada necessária para este caminho: " energia-necessaria)
   ]
 
-  ; Loga a energia atual e outros detalhes úteis
+  ; Loga a energia atual do Cleaner para monitoramento
   print (word "Energia atual do Cleaner: " energia)
 end
 
+; Função que estima a quantidade de energia necessária para percorrer o caminho gerado.
+; Penaliza a energia adicional ao passar por patches sujos (lixo leve, pesado ou tóxico).
 to-report estimar-energia-necessaria [caminho]
-  let energia-total 0  ; Variável para armazenar o custo total de energia
+  let energia-total 0  ; Inicializa a variável para armazenar o custo total de energia
 
   ; Percorre o caminho e calcula o custo de energia para cada patch
   foreach caminho [ patch-no-caminho ->
-    let custo 1  ; Custo base por movimento
+    let custo 1  ; Define o custo base por movimento
 
-    ; Se o patch estiver sujo, aplica penalidades de energia
+    ; Aplica penalidades se o patch estiver sujo
     if [sujo?] of patch-no-caminho [
       if [tipo-de-lixo] of patch-no-caminho = "pesada" [
-        set custo custo + (energia-inicial * 0.25)  ; Aumenta o custo em 25% para lixo pesada
+        set custo custo + (energia-inicial * 0.25)  ; Penaliza em 25% para lixo pesado
       ]
       if [tipo-de-lixo] of patch-no-caminho = "toxica" [
-        set custo custo + (energia-inicial * 0.5)   ; Aumenta o custo em 50% para lixo tóxica
+        set custo custo + (energia-inicial * 0.5)   ; Penaliza em 50% para lixo tóxico
       ]
     ]
 
@@ -553,50 +608,53 @@ to-report estimar-energia-necessaria [caminho]
     set energia-total energia-total + custo
   ]
 
-  report energia-total  ; Retorna a energia total estimada
+  report energia-total  ; Retorna o custo total de energia estimado
 end
 
-
+; Função que procura um painel solar num raio de 3 patches e recarrega instantaneamente se encontrar um.
 to procurar-e-recarregar
-  let painel-alvo one-of patches in-radius 3 with [painel-solar?]
+  let painel-alvo one-of patches in-radius 3 with [painel-solar?]  ; Busca um painel solar num raio de 3 patches
   if painel-alvo != nobody [
-    face painel-alvo
-    fd 0.8
+    face painel-alvo  ; Vira na direção do painel solar
+    fd 0.8  ; Move-se em direção ao painel
     if [painel-solar?] of patch-here [
-      recarregar-instantaneamente
+      recarregar-instantaneamente  ; Recarrega instantaneamente se estiver sobre um painel solar
     ]
   ]
 end
 
+
 ; Comportamento do Cleaner: mover-se, limpar e descarregar
 to mover-e-limpar
+  ; Verifica se o Cleaner não está no processo de recarregamento
   if not recarregamento? [
-    ; Verifica se há painéis solares no alcance
+
+    ; Verifica se há painéis solares no alcance (raio de 3 patches)
     let painel-alvo one-of patches in-radius 3 with [painel-solar? and not painel-usado?]
 
-    ; Se houver um painel solar no alcance, vai para ele e recarrega
+    ; Se houver um painel solar no alcance, o Cleaner se move até ele para recarregar
     if painel-alvo != nobody [
-      face painel-alvo
-      safe-move 0.8
+      face painel-alvo  ; Vira na direção do painel
+      safe-move 0.8  ; Move-se até o painel solar
 
-      ; Verifica se chegou ao painel solar
+      ; Verifica se chegou ao painel solar e se ainda não foi usado
       if [painel-solar?] of patch-here and not [painel-usado?] of patch-here [
-        recarregar-instantaneamente
+        recarregar-instantaneamente  ; Recarrega a energia instantaneamente
         ask patch-here [
           set painel-usado? true  ; Marca o painel como utilizado
-          set pcolor gray         ; Muda a cor para indicar que está inativo
+          set pcolor gray  ; Muda a cor do patch para indicar que o painel está inativo
         ]
       ]
-      stop
+      stop  ; Para o movimento depois de recarregar
     ]
 
     ; Memória do patch atual
     let patch-atual patch-here
     let tempo-desde-limpeza ticks - [tempo-limpo] of patch-atual
-    let patches-atuais filter [p -> ticks - last p < 50] patches-recentes
+    let patches-atuais filter [p -> ticks - last p < 50] patches-recentes  ; Mantém apenas patches recentemente visitados
     set patches-recentes patches-atuais
 
-    ; Atualiza a memória do patch atual
+    ; Atualiza a memória do patch atual (se o patch foi visitado recentemente)
     let patch-na-memoria filter [m -> first m = patch-atual] patches-recentes
     ifelse not empty? patch-na-memoria [
       let posicao position first patch-na-memoria patches-recentes
@@ -605,67 +663,70 @@ to mover-e-limpar
       set patches-recentes lput (list patch-atual [sujo?] of patch-atual tempo-desde-limpeza) patches-recentes
     ]
 
-    ; Otimização da busca de lixo
-    let patches-vistos patches in-radius 5  ; Patches visíveis em um raio maior
-    let patches-sujos patches-vistos with [sujo? and not member? self patches-recentes]  ; Patches sujos não recentemente limpos
+    ; Procura patches sujos no raio de 5 patches
+    let patches-vistos patches in-radius 5  ; Patches visíveis dentro de um raio maior
+    let patches-sujos patches-vistos with [sujo? and not member? self patches-recentes]  ; Patches sujos que não foram limpos recentemente
 
     ifelse any? patches-sujos [
-      ; Prioriza patches sujos com base no tempo de lixo (mais antigos primeiro)
+      ; Prioriza patches sujos mais antigos (baseado no tempo de sujeira)
       let patch-alvo max-one-of patches-sujos [tempo-limpo]
-      face patch-alvo
-      safe-move 1
+      face patch-alvo  ; Vira na direção do patch sujo
+      safe-move 1  ; Move-se até o patch
 
-      ; Verifica se o patch tem lixo pesada ou tóxica
+      ; Penaliza a energia ao passar por lixo pesado ou tóxico
       if [sujo?] of patch-alvo [
         if [tipo-de-lixo] of patch-alvo = "pesada" [
-          set energia energia - (energia-inicial * 0.25)  ; Penaliza o Cleaner por passar em lixo pesada
-          print (word "Passou por lixo pesada. Energia reduzida em 25%. Energia atual: " energia)
+          set energia energia - (energia-inicial * 0.25)  ; Penaliza em 25% para lixo pesado
+          print (word "Passou por lixo pesado. Energia reduzida em 25%. Energia atual: " energia)
         ]
         if [tipo-de-lixo] of patch-alvo = "toxica" [
-          set energia energia - (energia-inicial * 0.5)
-          print (word "Passou por lixo tóxica. Energia reduzida em 50%. Energia atual: " energia)
+          set energia energia - (energia-inicial * 0.5)  ; Penaliza em 50% para lixo tóxico
+          print (word "Passou por lixo tóxico. Energia reduzida em 50%. Energia atual: " energia)
         ]
-        ; Limpar o patch
+        ; Limpa o patch sujo
         ask patch-alvo [
-          set sujo? false  ; Limpa o patch
-          set pcolor white  ; Retorna a cor original do patch
-          set tempo-limpo ticks
+          set sujo? false  ; Marca o patch como limpo
+          set pcolor white  ; Retorna a cor original
+          set tempo-limpo ticks  ; Registra o tempo de limpeza
         ]
-        set detritos detritos + 1  ; Atualiza a quantidade de detritos coletados
+        set detritos detritos + 1  ; Aumenta a quantidade de detritos coletados
       ]
     ][
-      ; Se não houver patches sujos, move-se aleatoriamente, mas evita patches recentemente visitados
+      ; Se não houver patches sujos, move-se aleatoriamente, evitando patches recentemente visitados
       let patch-aleatorio one-of patches-vistos with [not member? self patches-recentes]
       ifelse patch-aleatorio != nobody [
-        face patch-aleatorio
-        safe-move 1
+        face patch-aleatorio  ; Vira na direção do patch aleatório
+        safe-move 1  ; Move-se até o patch
       ][
-        ; Se não encontrar um patch novo, move-se aleatoriamente
-        right random 360
-        safe-move 1
+        ; Se não encontrar patches não visitados, move-se aleatoriamente
+        right random 360  ; Gira aleatoriamente
+        safe-move 1  ; Move-se para frente
       ]
     ]
 
-    ; Reduzir a energia a cada movimento
+    ; Reduz a energia a cada movimento
     set energia energia - 1
+    ; Se a energia acabar, recarrega
     if energia <= 0 [ recarregar ]
   ]
 end
 
+
 ; Algoritmo para exploração inteligente
+; Função que faz o Cleaner explorar patches no seu entorno, ajustando o raio de exploração conforme a energia restante.
 to andar-explorar
-  ; Ajusta o raio de exploração baseado na energia restante
-  let raio-exploracao 5
+  ; Ajusta o raio de exploração baseado na energia restante do Cleaner
+  let raio-exploracao 5  ; Define o raio padrão de exploração
   if energia < energia-inicial * 0.5 [
     print "Energia abaixo de 50%. Reduzindo raio de exploração para 3."
-    set raio-exploracao 3
+    set raio-exploracao 3  ; Reduz o raio de exploração se a energia estiver abaixo de 50%
   ]
 
   ; O Cleaner examina os patches ao seu redor dentro do raio ajustado
   let patches-visiveis patches in-radius raio-exploracao
   print (word "Patches visíveis no raio de " raio-exploracao ": " count patches-visiveis)
 
-  ; Seleciona patches que não estão na lista de patches recentes e que podem estar sujos
+  ; Seleciona patches válidos: que não foram visitados recentemente, não são depósitos e não têm painéis solares
   let patches-validos patches-visiveis with [
     not member? (list pxcor pycor) patches-recentes
     and not deposito?
@@ -673,18 +734,17 @@ to andar-explorar
   ]
   print (word "Patches válidos encontrados: " count patches-validos)
 
-
   ; Se encontrar patches válidos, move-se para um deles, senão move-se aleatoriamente
   ifelse any? patches-validos [
-    ; Se encontrar patches válidos, seleciona um e move-se para ele
+    ; Move-se para um patch válido
     let patch-alvo one-of patches-validos
     print (word "Patch alvo encontrado em: (" [pxcor] of patch-alvo "," [pycor] of patch-alvo ")")
 
-    face patch-alvo
-    safe-move 1
+    face patch-alvo  ; Vira na direção do patch alvo
+    safe-move 1  ; Move-se para o patch
     print (word "Movendo para patch: (" [pxcor] of patch-here "," [pycor] of patch-here ")")
 
-    ; Atualiza a memória do patch atual
+    ; Atualiza a memória com o patch visitado
     let patch-atual patch-here
     let tempo-desde-limpeza ticks - [tempo-limpo] of patch-atual
     set patches-recentes lput (list [pxcor] of patch-atual [pycor] of patch-atual) patches-recentes
@@ -693,139 +753,159 @@ to andar-explorar
   ] [
     ; Se não encontrar patches válidos, move-se aleatoriamente
     print "Nenhum patch estratégico encontrado, movendo-se aleatoriamente..."
-    right random 360
-    safe-move 1
+    right random 360  ; Gira aleatoriamente
+    safe-move 1  ; Move-se em uma direção aleatória
     print (word "Movendo-se aleatoriamente para: (" [pxcor] of patch-here "," [pycor] of patch-here ")")
   ]
-          set energia energia - 1
 
-  ; Verifica a energia e decide se é necessário recarregar ou continuar explorando
+  ; Reduz a energia a cada movimento
+  set energia energia - 1
+
+  ; Verifica a energia e decide se é necessário recarregar
   ifelse energia <= 0 [
     print "Energia esgotada durante a exploração. Iniciando recarga..."
-    recarregar
+    recarregar  ; Recarrega se a energia estiver esgotada
   ] [
-    print (word "Energia restante: " energia)
+    print (word "Energia restante: " energia)  ; Exibe a energia restante
   ]
 end
 
+
+; Função que ativa a bomba, limpando uma grande área ao redor do Cleaner.
+; A bomba só pode ser usada uma vez. Limpa todos os patches dentro de um raio, exceto depósitos e painéis solares.
 to ativar-bomba
   ifelse not bomba-usada? [   ; A bomba só pode ser usada uma vez
-    effectbomb
-    set bomba-usada? true
-    set bomba-temporizador 20   ; O cleaner ficará parado por 20 ticks
-    let raio-limpeza 11          ; Define o raio da limpeza
+    effectbomb  ; Executa o efeito sonoro da bomba
+    set bomba-usada? true  ; Marca a bomba como usada
+    set bomba-temporizador 20   ; O Cleaner ficará parado por 20 ticks após ativar a bomba
+    let raio-limpeza 11  ; Define o raio de ação da bomba para limpar os patches
 
+    ; Limpa todos os patches dentro do raio de ação, exceto depósitos e painéis solares
     ask patches in-radius raio-limpeza [
-      ; Somente limpa patches que não são depósitos nem painéis solares
-      if not deposito? and not painel-solar? [
-        set sujo? false
-        set pcolor white          ; Limpa e muda a cor de volta para branco
-        set tempo-limpo ticks     ; Marca o tempo em que foi limpo
+      if not deposito? and not painel-solar? [  ; Não limpa depósitos nem painéis solares
+        set sujo? false  ; Marca o patch como limpo
+        set pcolor white  ; Retorna a cor original do patch
+        set tempo-limpo ticks  ; Registra o tempo de limpeza
       ]
     ]
 
     print "Bomba ativada! Limpando grande área..."
   ] [
-    print "Bomba já foi usada..."
+    print "Bomba já foi usada..."  ; Informa que a bomba já foi utilizada
   ]
 end
 
-
-
-
-
-
+; Função que move o Cleaner de forma segura, evitando que ele ultrapasse os limites do mundo.
 to safe-move [distancia]
+  ; Calcula as coordenadas do próximo movimento com base na direção atual
   let next-x xcor + distancia * sin heading
   let next-y ycor + distancia * cos heading
 
-  ; Verifica se o próximo movimento ultrapassará as bordas
+  ; Verifica se o movimento ultrapassa as bordas do mundo
   ifelse (next-x <= max-pxcor and next-x >= min-pxcor and next-y <= max-pycor and next-y >= min-pycor) [
-    fd distancia
+    fd distancia  ; Se estiver dentro dos limites, move-se a distância especificada
   ] [
-    ; Se ultrapassar, não se move e talvez faça algo como girar ou recuar
-    rt random 180  ; Gira aleatoriamente
+    ; Se ultrapassar os limites, não se move e gira aleatoriamente
+    rt random 180  ; Gira 180 graus de forma aleatória
   ]
 end
+
 
 
 ; Função de recarregar energia
 to recarregar
-  move-to patch min-pxcor min-pycor
-  set recarregamento? true
-
+  move-to patch min-pxcor min-pycor  ; Move o Cleaner para um ponto de recarga, aqui definido como o canto inferior esquerdo do mundo
+  set recarregamento? true  ; Marca o Cleaner como em processo de recarregamento
 end
+
+; Função que continua o processo de recarregamento até a energia estar completamente restaurada
 to continuar-recarregar
-  ; Se o Cleaner ainda não completou o ciclo de recarregamento
+  ; Incrementa o tempo desde o início do recarregamento
   set tempo-desde-carregamento tempo-desde-carregamento + 1
+
+  ; Verifica se o tempo de recarregamento foi atingido
   if tempo-desde-carregamento >= tempo-carregamento [
-    set energia energia-inicial  ; Define a energia para o valor máximo após o tempo de recarregamento
-    set recarregamento? false    ; Finaliza o recarregamento
+    set energia energia-inicial  ; Restaura a energia para o valor inicial (máximo)
+    set recarregamento? false  ; Finaliza o processo de recarregamento
   ]
 end
 
-; Função de descarregar detritos
+; Função de descarregar os detritos acumulados
 to descarregar
+  ; Encontra um patch com depósito mais próximo
   let patch-alvo one-of patches with [ deposito? ]
+
+  ; Vira na direção do depósito e move-se até ele
   face patch-alvo
   move-to patch-alvo
+
+  ; Se o Cleaner estiver no patch com o depósito, descarrega os detritos
   if patch-here = patch-alvo [
-    set detritos 0
+    set detritos 0  ; Zera a quantidade de detritos do Cleaner
   ]
 end
+
+; Função que controla o movimento e a deposição de lixo pelos poluidores
 to mover-e-poluente
-  ; Encontrar patches ao redor que não estão sujos e que não são depósitos nem painéis solares
+  ; Encontra patches limpos ao redor que não sejam depósitos ou painéis solares, e que não estejam no canto inferior esquerdo
   let patches-limpos patches in-radius 3 with [
     not sujo? and not deposito? and not painel-solar? and (pxcor != min-pxcor or pycor != min-pycor)
   ]
 
+  ; Se houver patches limpos, o poluidor move-se para um deles
   ifelse any? patches-limpos [
-    ; Se houver patches limpos (e sem depósitos ou painéis solares), mover-se para um deles
-    let patch-alvo one-of patches-limpos
-    face patch-alvo
-    fd 0.8
+    let patch-alvo one-of patches-limpos  ; Seleciona um patch limpo aleatoriamente
+    face patch-alvo  ; Vira na direção do patch alvo
+    fd 0.8  ; Move-se em direção ao patch
   ] [
-    ; Se não houver patches limpos, mover-se aleatoriamente, mas evitar depósitos e painéis solares
+    ; Se não houver patches limpos, move-se aleatoriamente evitando depósitos e painéis solares
     let patches-validos patches in-radius 3 with [
       not deposito? and not painel-solar? and (pxcor != min-pxcor or pycor != min-pycor)
     ]
     ifelse any? patches-validos [
-      let patch-aleatorio one-of patches-validos
+      let patch-aleatorio one-of patches-validos  ; Escolhe um patch válido aleatoriamente
       face patch-aleatorio
-      fd 0.8
+      fd 0.8  ; Move-se para o patch
     ] [
-      right random 360
-      fd 0.8
+      right random 360  ; Se não encontrar patches válidos, gira aleatoriamente
+      fd 0.8  ; Move-se para frente
     ]
   ]
 
-  ; Deposição de lixo com probabilidade definida pelos sliders
+  ; Tenta depositar lixo com uma probabilidade definida pelos sliders
   if not [sujo?] of patch-here and not [deposito?] of patch-here and not [painel-solar?] of patch-here and (pxcor != min-pxcor or pycor != min-pycor) [
-    let chance-deposit random-float 1
+    let chance-deposit random-float 1  ; Gera um número aleatório entre 0 e 1
     if chance-deposit < probabilidade-depositos [
       ask patch-here [
-        set sujo? true
-        set tipo-de-lixo [tipo-de-poluicao] of myself
+        set sujo? true  ; Marca o patch como sujo
+        set tipo-de-lixo [tipo-de-poluicao] of myself  ; Define o tipo de lixo com base no poluidor
+
+        ; Define a cor do patch com base no tipo de poluição
         if tipo-de-lixo = "leve" [
-          set pcolor yellow  ; Poluição leve
+          set pcolor yellow  ; Poluição leve (amarela)
         ]
         if tipo-de-lixo = "pesada" [
-          set pcolor brown   ; Poluição pesada
+          set pcolor brown   ; Poluição pesada (marrom)
         ]
         if tipo-de-lixo = "toxica" [
-          set pcolor green   ; Poluição tóxica
+          set pcolor green   ; Poluição tóxica (verde)
         ]
       ]
     ]
   ]
 end
 
+; Função que recarrega instantaneamente a energia do Cleaner usando um painel solar
 to recarregar-instantaneamente
+  ; Aumenta a energia do Cleaner com base na eficiência do painel solar
   set energia energia + ([eficiencia] of patch-here) * 10
+
+  ; Garante que a energia não exceda o valor máximo (energia-inicial)
   if energia > energia-inicial [
     set energia energia-inicial
   ]
-  set recarregamento? false
+
+  set recarregamento? false  ; Finaliza o estado de recarregamento
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
