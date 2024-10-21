@@ -5,14 +5,20 @@ patches-own [ sujo? deposito? tempo-limpo painel-solar? painel-usado? tempo-de-v
 globals [ cleaner polluter-tipos recarregamento? energia tempo-desde-carregamento quantidade-de-lixo solar-timer openSet closedSet cameFrom gScore fScore patches-recentes dirty-patches quantidade-de-limpo bomba-usada? bomba-temporizador]
 
 to tocar-som
-  ;; Configurar a execução do Python
-  py:setup "C:/Program Files/Python312/python.exe"
-  py:python "exec(open('sound.py').read())"
-
-  ;; Chamar a função Python que toca o som
-  py:python "tocar_som()"
+  py:setup "python"  ;; Caminho para o Python
+  py:run "exec(open('sound.py').read())"
+  show "A música está tocando no background!"
 end
 
+to parar-som
+  py:run "pygame.mixer.music.stop()"
+  show "A música foi parada!"
+end
+to effectbomb
+    py:run "exec(open('soundEffect.py').read())"
+    show "Cá vai bombaaa!!"
+
+end
 to setup
   clear-all
 
@@ -28,7 +34,7 @@ to setup
   set bomba-usada? false   ; A bomba ainda não foi usada
   set bomba-temporizador 0  ; O temporizador para a bomba começa em 0
 
-
+  tocar-som
 
 
   ; Limpar o ambiente
@@ -146,11 +152,6 @@ end
 
 to go
 
-  if bomba-temporizador > 0 [
-    set bomba-temporizador bomba-temporizador - 1   ; Reduz o temporizador a cada tick
-    print (word "Cleaner parado. Restam " bomba-temporizador " ticks.")
-    stop
-  ]
 
   ask cleaner [
     schedule-actions
@@ -173,7 +174,14 @@ end
 
 to schedule-actions
   ; Verifica se o Cleaner está recarregando
-  if recarregamento? [
+
+    ifelse bomba-temporizador > 0 [
+    set bomba-temporizador bomba-temporizador - 1   ; Reduz o temporizador a cada tick
+    print (word "Cleaner parado. Restam " bomba-temporizador " ticks.")
+    stop
+  ][
+
+    if recarregamento?  [
     continuar-recarregar
     stop
   ]
@@ -235,6 +243,8 @@ to schedule-actions
 
   ; Prioridade 4: Exploração aleatória se não houver patches sujos visíveis
   andar-explorar
+  ]
+
 end
 
 to-report a-star [start goal]
@@ -698,20 +708,25 @@ to andar-explorar
   ]
 end
 
-
 to ativar-bomba
   ifelse not bomba-usada? [   ; A bomba só pode ser usada uma vez
+    effectbomb
     set bomba-usada? true
     set bomba-temporizador 20   ; O cleaner ficará parado por 20 ticks
     let raio-limpeza 11          ; Define o raio da limpeza
+
     ask patches in-radius raio-limpeza [
-      set sujo? false
-      set pcolor white          ; Limpa e muda a cor de volta para branco
-      set tempo-limpo ticks     ; Marca o tempo em que foi limpo
+      ; Somente limpa patches que não são depósitos nem painéis solares
+      if not deposito? and not painel-solar? [
+        set sujo? false
+        set pcolor white          ; Limpa e muda a cor de volta para branco
+        set tempo-limpo ticks     ; Marca o tempo em que foi limpo
+      ]
     ]
+
     print "Bomba ativada! Limpando grande área..."
   ] [
-    print "Bomba ja usada..."
+    print "Bomba já foi usada..."
   ]
 end
 
@@ -759,17 +774,21 @@ to descarregar
   ]
 end
 to mover-e-poluente
-  ; Encontrar patches ao redor que não estão sujos e que não são depósitos
-  let patches-limpos patches in-radius 3 with [not sujo? and not deposito? ]
+  ; Encontrar patches ao redor que não estão sujos e que não são depósitos nem painéis solares
+  let patches-limpos patches in-radius 3 with [
+    not sujo? and not deposito? and not painel-solar? and (pxcor != min-pxcor or pycor != min-pycor)
+  ]
 
   ifelse any? patches-limpos [
-    ; Se houver patches limpos (e sem depósitos), mover-se para um deles
+    ; Se houver patches limpos (e sem depósitos ou painéis solares), mover-se para um deles
     let patch-alvo one-of patches-limpos
     face patch-alvo
     fd 0.8
   ] [
-    ; Se não houver patches limpos, mover-se aleatoriamente, mas evitar depósitos
-    let patches-validos patches in-radius 3 with [not deposito?]
+    ; Se não houver patches limpos, mover-se aleatoriamente, mas evitar depósitos e painéis solares
+    let patches-validos patches in-radius 3 with [
+      not deposito? and not painel-solar? and (pxcor != min-pxcor or pycor != min-pycor)
+    ]
     ifelse any? patches-validos [
       let patch-aleatorio one-of patches-validos
       face patch-aleatorio
@@ -779,8 +798,9 @@ to mover-e-poluente
       fd 0.8
     ]
   ]
+
   ; Deposição de lixo com probabilidade definida pelos sliders
-  if not [sujo?] of patch-here and not [deposito?] of patch-here [  ; Verifica se o patch não é depósito
+  if not [sujo?] of patch-here and not [deposito?] of patch-here and not [painel-solar?] of patch-here and (pxcor != min-pxcor or pycor != min-pycor) [
     let chance-deposit random-float 1
     if chance-deposit < probabilidade-depositos [
       ask patch-here [
@@ -807,7 +827,6 @@ to recarregar-instantaneamente
   ]
   set recarregamento? false
 end
-
 @#$#@#$#@
 GRAPHICS-WINDOW
 190
@@ -911,7 +930,7 @@ prob-polluter-1
 prob-polluter-1
 0
 1
-0.7
+0.65
 0.05
 1
 NIL
@@ -926,7 +945,7 @@ prob-polluter-2
 prob-polluter-2
 0
 1
-0.6
+0.5
 0.05
 1
 NIL
@@ -956,7 +975,7 @@ postos-deposito
 postos-deposito
 2
 10
-5.0
+4.0
 1
 1
 NIL
@@ -971,7 +990,7 @@ capacidade-detritos
 capacidade-detritos
 1
 20
-16.0
+13.0
 1
 1
 NIL
@@ -986,7 +1005,7 @@ energia-inicial
 energia-inicial
 0
 200
-200.0
+152.0
 1
 1
 NIL
@@ -1023,7 +1042,7 @@ tempo-carregamento
 tempo-carregamento
 1
 50
-8.0
+13.0
 1
 1
 NIL
@@ -1087,6 +1106,23 @@ NIL
 1
 T
 TURTLE
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+38
+565
+140
+598
+Parar musica
+parar-som
+NIL
+1
+T
+OBSERVER
 NIL
 NIL
 NIL
